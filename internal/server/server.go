@@ -30,9 +30,14 @@ type Options struct {
 	// IdP enables the SAML endpoints (/metadata, /sso). Nil serves only
 	// /healthz.
 	IdP *idp.IdP
-	// Sessions resolves the signed-in user for SSO requests. If nil, /sso
-	// validates requests but answers 503 (no login backend configured).
-	Sessions          Sessions
+	// Login enables the upstream OIDC login (/oidc/callback) and the
+	// cookie-backed bridge session. When set, it provides Sessions.
+	Login *Login
+	// Sessions resolves the signed-in user for SSO requests. Ignored when
+	// Login is set. If both are nil, /sso validates requests but answers
+	// 503. Tests use fixed identities here.
+	Sessions Sessions
+
 	ReadHeaderTimeout time.Duration
 	ReadTimeout       time.Duration
 	WriteTimeout      time.Duration
@@ -47,8 +52,18 @@ type Server struct {
 	handler http.Handler
 }
 
-// New builds a Server and registers all routes.
+// New builds a Server and registers all routes. It panics on an invalid
+// Login configuration (a programming error; config validation happens
+// earlier).
 func New(opts Options) *Server {
+	if opts.Login != nil {
+		if err := opts.Login.validate(); err != nil {
+			panic(err)
+		}
+		if opts.IdP == nil {
+			panic("server: Login requires IdP")
+		}
+	}
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.DiscardHandler)
 	}
@@ -59,6 +74,9 @@ func New(opts Options) *Server {
 	setDefault(&opts.ShutdownTimeout, DefaultShutdownTimeout)
 
 	s := &Server{log: opts.Logger, opts: opts}
+	if opts.Login != nil {
+		s.opts.Sessions = oidcSessions{s}
+	}
 	mux := http.NewServeMux()
 	s.routes(mux)
 	s.handler = s.middleware(mux)
@@ -74,14 +92,16 @@ func setDefault(d *time.Duration, def time.Duration) {
 // Handler returns the fully wrapped root handler (useful for tests).
 func (s *Server) Handler() http.Handler { return s.handler }
 
-// routes registers every endpoint. Later phases add /login/{sp_id} and
-// /oidc/callback here.
+// routes registers every endpoint. Phase 4 adds /login/{sp_id}.
 func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	if s.opts.IdP != nil {
 		mux.HandleFunc("GET "+idp.MetadataPath, s.handleMetadata)
 		mux.HandleFunc("GET "+idp.SSOPath, s.handleSSO)
 		mux.HandleFunc("POST "+idp.SSOPath, s.handleSSO)
+	}
+	if s.opts.Login != nil {
+		mux.HandleFunc("GET "+CallbackPath, s.handleCallback)
 	}
 }
 

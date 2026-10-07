@@ -22,6 +22,9 @@ type AuthnRequest struct {
 	// ReceivedAt is when the request was first received; validity
 	// (IssueInstant freshness) is judged at this time.
 	ReceivedAt time.Time
+	// Replayed is set by the HTTP layer when this request is the bridge's
+	// own replay after an upstream login (verified via a signed token).
+	Replayed bool
 
 	req *saml.IdpAuthnRequest
 }
@@ -41,12 +44,15 @@ func (a *AuthnRequest) ForceAuthn() bool {
 // the HTTP-Redirect (GET) or HTTP-POST binding. For POST, r.Body must
 // already be limited (http.MaxBytesReader). All failures are *RequestError.
 func (p *IdP) ParseRequest(r *http.Request) (*AuthnRequest, error) {
-	xmlBuf, relayState, err := decodeRequest(r)
+	xmlBuf, relayState, err := DecodeRequest(r)
 	if err != nil {
 		return nil, err
 	}
 	return p.ParseXML(r, xmlBuf, relayState, p.now())
 }
+
+// Now returns the IdP's current time (used to stamp ReceivedAt).
+func (p *IdP) Now() time.Time { return p.now() }
 
 // ParseXML validates a decoded AuthnRequest as if received at receivedAt.
 // It is used directly when replaying a stored request after OIDC login.

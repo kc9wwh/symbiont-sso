@@ -14,10 +14,13 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"syscall"
+	"time"
 
 	"github.com/kc9wwh/symbiont-sso/internal/config"
 	"github.com/kc9wwh/symbiont-sso/internal/idp"
+	"github.com/kc9wwh/symbiont-sso/internal/oidcrp"
 	"github.com/kc9wwh/symbiont-sso/internal/server"
+	"github.com/kc9wwh/symbiont-sso/internal/session"
 )
 
 // version is overridden at build time:
@@ -111,17 +114,28 @@ func runServe(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) i
 		return exitConfig
 	}
 
+	oidcClient, err := buildOIDC(ctx, cfg, logger)
+	if err != nil {
+		logger.Error("OIDC provider unavailable", "issuer", cfg.OIDC.Issuer, "error", err)
+		return exitConfig
+	}
+
 	ln, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
 		logger.Error("cannot listen", "addr", cfg.ListenAddr, "error", err)
 		return exitError
 	}
-	if err := serve(ctx, cfg, logger, p, ln); err != nil {
+	if err := serve(ctx, cfg, logger, p, oidcClient, ln); err != nil {
 		logger.Error("server error", "error", err)
 		return exitError
 	}
 	return exitOK
 }
+
+// accessNotEnforcedWarning is logged once at boot while per-SP access policy
+// is parsed but not enforced. Remove in phase 4.
+const accessNotEnforcedWarning = "access policy is not enforced in this build; " +
+	"all authenticated users can obtain assertions for every configured SP"
 
 // buildIdP loads and validates the service provider file and constructs the
 // SAML identity provider.
@@ -137,6 +151,8 @@ func buildIdP(cfg *config.Config, logger *slog.Logger) (*idp.IdP, error) {
 	if err != nil {
 		return nil, err
 	}
+	// TODO(phase 4): remove once /sso enforces per-SP access policy.
+	logger.Warn(accessNotEnforcedWarning)
 	for _, sp := range sps.All() {
 		logger.Info("service provider loaded",
 			"sp_id", sp.ID,
@@ -155,8 +171,45 @@ func buildIdP(cfg *config.Config, logger *slog.Logger) (*idp.IdP, error) {
 	})
 }
 
+// discoveryTimeout bounds the startup OIDC discovery request.
+const discoveryTimeout = 15 * time.Second
+
+// buildOIDC performs OIDC discovery (fail fast if unreachable or the issuer
+// mismatches) and logs non-fatal discovery mismatches as warnings.
+func buildOIDC(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*oidcrp.Client, error) {
+	dctx, cancel := context.WithTimeout(ctx, discoveryTimeout)
+	defer cancel()
+	c, err := oidcrp.New(dctx, oidcrp.Options{
+		Issuer:        cfg.OIDC.Issuer,
+		ClientID:      cfg.OIDC.ClientID,
+		ClientSecret:  string(cfg.OIDC.ClientSecret.Bytes()),
+		RedirectURL:   cfg.CallbackURL(),
+		Scopes:        cfg.OIDC.Scopes,
+		Prompt:        cfg.OIDC.Prompt,
+		FetchUserinfo: cfg.OIDC.FetchUserinfo,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range c.Warnings() {
+		logger.Warn("OIDC configuration warning", "detail", w)
+	}
+	return c, nil
+}
+
 // serve runs the HTTP server on ln until ctx is cancelled.
-func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger, p *idp.IdP, ln net.Listener) error {
+func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger, p *idp.IdP, oc *oidcrp.Client, ln net.Listener) error {
+	signer, err := session.NewSigner(cfg.Session.Secret.Bytes())
+	if err != nil {
+		return err
+	}
+	pending := session.NewMemoryPendingStore(session.MemoryOptions{TTL: cfg.PendingRequestTTL})
+	sessions := session.NewMemorySessionStore(session.MemoryOptions{})
+	sweepCtx, stopSweep := context.WithCancel(ctx)
+	defer stopSweep()
+	go pending.Run(sweepCtx, session.DefaultSweepInterval)
+	go sessions.Run(sweepCtx, session.DefaultSweepInterval)
+
 	logger.Info("starting symbiont",
 		"version", buildVersion(),
 		"base_url", cfg.BaseURL.String(),
@@ -166,9 +219,26 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger, p *idp.
 		"oidc_redirect_uri", cfg.CallbackURL(),
 		"session_ttl", cfg.Session.TTL.String(),
 	)
-	// Sessions (the OIDC login backend) arrive in phase 3; until then /sso
-	// validates requests and answers 503.
-	srv := server.New(server.Options{Logger: logger, IdP: p})
+	srv := server.New(server.Options{
+		Logger: logger,
+		IdP:    p,
+		Login: &server.Login{
+			OIDC:     oc,
+			Pending:  pending,
+			Sessions: sessions,
+			Signer:   signer,
+			Cookies:  session.NewCookies(cfg.BaseURL.Scheme == "https"),
+			Claims: oidcrp.ClaimNames{
+				Email: cfg.OIDC.EmailClaim, Name: cfg.OIDC.NameClaim, Groups: cfg.OIDC.GroupsClaim,
+			},
+			Policy: oidcrp.Policy{
+				RequireEmailVerified: cfg.OIDC.RequireEmailVerified,
+				AllowedDomains:       cfg.AllowedEmailDomains,
+			},
+			SessionTTL: cfg.Session.TTL,
+			PendingTTL: cfg.PendingRequestTTL,
+		},
+	})
 	return srv.Run(ctx, ln)
 }
 

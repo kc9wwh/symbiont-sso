@@ -62,10 +62,11 @@ func ValidRelayState(s string) bool {
 	return true
 }
 
-// decodeRequest extracts the raw AuthnRequest XML and RelayState from an
+// DecodeRequest extracts the raw AuthnRequest XML and RelayState from an
 // HTTP-Redirect (GET) or HTTP-POST request, enforcing size limits before any
-// XML parsing. POST bodies must already be wrapped in http.MaxBytesReader.
-func decodeRequest(r *http.Request) (xmlBuf []byte, relayState string, err error) {
+// XML parsing. POST bodies must already be wrapped in http.MaxBytesReader;
+// after a POST, other form fields are available in r.PostForm.
+func DecodeRequest(r *http.Request) (xmlBuf []byte, relayState string, err error) {
 	var encoded string
 	switch r.Method {
 	case http.MethodGet:

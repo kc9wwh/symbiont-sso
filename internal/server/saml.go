@@ -33,16 +33,34 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSSO serves SP-initiated SSO for both the HTTP-Redirect (GET) and
-// HTTP-POST bindings.
+// HTTP-POST bindings, plus the bridge's own post-login replay (POST with a
+// signed replay token).
 func (s *Server) handleSSO(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		r.Body = http.MaxBytesReader(w, r.Body, idp.MaxRequestBytes)
 	}
-	req, err := s.opts.IdP.ParseRequest(r)
+	xmlBuf, relayState, err := idp.DecodeRequest(r)
 	if err != nil {
 		s.rejectSSO(w, r, err)
 		return
 	}
+	receivedAt, replayed := s.opts.IdP.Now(), false
+	if tok := r.PostFormValue(replayField); tok != "" && s.opts.Login != nil {
+		t, ok := verifyReplay(s.opts.Login.Signer, tok, xmlBuf, s.opts.Login.now())
+		if !ok {
+			s.log.WarnContext(r.Context(), "invalid replay token", "flow", "sp", "error_category", "replay_token_invalid")
+			s.errorPage(w, r, http.StatusBadRequest, "Sign-in request rejected",
+				"This sign-in link has expired. Please return to the application and sign in again.")
+			return
+		}
+		receivedAt, replayed = t, true
+	}
+	req, err := s.opts.IdP.ParseXML(r, xmlBuf, relayState, receivedAt)
+	if err != nil {
+		s.rejectSSO(w, r, err)
+		return
+	}
+	req.Replayed = replayed
 	log := s.log.With("flow", "sp", "sp_id", req.SP.ID, "sp_entity_id", req.SP.EntityID)
 
 	if s.opts.Sessions == nil {

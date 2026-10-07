@@ -1,5 +1,7 @@
 # symbiont
 
+> **Pre-release:** per-SP access policy (`access` blocks) is parsed and validated but **not yet enforced**. Any user the upstream IdP authenticates receives an assertion for any configured SP. Do not use with Fleet JIT provisioning enabled until this is resolved. Tracked in [TODO](#todo) below.
+
 > **Status: under construction.** This README is a stub that collects
 > decisions as they are made; the full guide (quick start, Fleet and
 > Pocket ID setup, troubleshooting) lands with the packaging phase.
@@ -25,12 +27,11 @@ clock-skew allowance) and on the SP rejecting reuse of an assertion ID.
 Fleet does track consumed assertion IDs; other SPs may not. Only enable
 `idp_initiated` where you need it.
 
-## Future work
+## TODO
 
-- **Encrypted assertions:** per-SP `encrypt_assertions: true` plus the SP's
-  encryption certificate. Assertions are encrypted to the *SP's* public
-  key, so symbiont's metadata intentionally publishes no `encryption` key.
-  Fleet does not currently configure an SP key.
+- [ ] Enforce per-SP `access` policy at `/sso` (Phase 4). Deny from existing session; no IdP redirect loop.
+- [ ] Per-SP attribute mapping + Fleet role validation, `/login/{sp_id}`, `check-mapping` (Phase 4).
+- [ ] Document two-layer access: upstream OIDC client restricted to the union of SP groups (e.g., Pocket ID "Allowed user groups"), Symbiont per-SP `access` as the authoritative per-SP control.
 
 ## License
 

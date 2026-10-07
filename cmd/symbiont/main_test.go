@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/oauth2-proxy/mockoidc"
+
 	"github.com/kc9wwh/symbiont-sso/internal/config"
 )
 
@@ -72,9 +74,22 @@ func TestServeInvalidConfigExitsWithConfigCode(t *testing.T) {
 	}
 }
 
-// validEnv writes a valid key pair and SP file and returns an environment.
+// startMockOIDC runs a mock OIDC provider for the duration of the test.
+func startMockOIDC(t *testing.T) *mockoidc.MockOIDC {
+	t.Helper()
+	m, err := mockoidc.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Shutdown() })
+	return m
+}
+
+// validEnv writes a valid key pair and SP file, starts a mock OIDC issuer,
+// and returns a complete environment.
 func validEnv(t *testing.T, listen string) map[string]string {
 	t.Helper()
+	m := startMockOIDC(t)
 	dir := t.TempDir()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -101,9 +116,9 @@ func validEnv(t *testing.T, listen string) map[string]string {
 		config.EnvBaseURL:          "http://localhost:8080",
 		config.EnvListenAddr:       listen,
 		config.EnvSPConfigFile:     write("symbiont.yaml", []byte(validSPFile)),
-		config.EnvOIDCIssuer:       "http://localhost:1411",
-		config.EnvOIDCClientID:     "symbiont",
-		config.EnvOIDCClientSecret: "s3cr3t-client",
+		config.EnvOIDCIssuer:       m.Issuer(),
+		config.EnvOIDCClientID:     m.ClientID,
+		config.EnvOIDCClientSecret: m.ClientSecret,
 		config.EnvSAMLCertFile:     write("cert.pem", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})),
 		config.EnvSAMLKeyFile:      write("key.pem", pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})),
 		config.EnvSessionSecret:    base64.StdEncoding.EncodeToString(make([]byte, 32)),
@@ -166,9 +181,48 @@ func TestServeStartsAndStopsOnCancel(t *testing.T) {
 			t.Errorf("logs missing %s:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "s3cr3t-client") {
+	if strings.Contains(out, env[config.EnvOIDCClientSecret]) {
 		t.Errorf("logs leaked OIDC client secret")
 	}
+	// Pre-release: exactly one WARN that access policy is not enforced.
+	if n := strings.Count(out, accessNotEnforcedWarning); n != 1 {
+		t.Errorf("access-not-enforced warning logged %d times, want 1", n)
+	}
+	if !strings.Contains(out, `"level":"WARN","msg":"`+accessNotEnforcedWarning+`"`) {
+		t.Errorf("access-not-enforced warning not at WARN level:\n%s", out)
+	}
+}
+
+func TestServeOIDCDiscoveryFailures(t *testing.T) {
+	t.Run("unreachable", func(t *testing.T) {
+		env := validEnv(t, "127.0.0.1:0")
+		dead, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		env[config.EnvOIDCIssuer] = "http://" + dead.Addr().String()
+		_ = dead.Close()
+		lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+		var logs bytes.Buffer
+		if code := run(context.Background(), nil, lookup, &logs, &logs); code != exitConfig {
+			t.Fatalf("exit = %d, want %d", code, exitConfig)
+		}
+		if !strings.Contains(logs.String(), `"msg":"OIDC provider unavailable"`) {
+			t.Errorf("logs = %s", logs.String())
+		}
+	})
+	t.Run("issuer mismatch", func(t *testing.T) {
+		env := validEnv(t, "127.0.0.1:0")
+		env[config.EnvOIDCIssuer] += "/" // trailing slash differs from discovered issuer
+		lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+		var logs bytes.Buffer
+		if code := run(context.Background(), nil, lookup, &logs, &logs); code != exitConfig {
+			t.Fatalf("exit = %d, want %d", code, exitConfig)
+		}
+		if !strings.Contains(logs.String(), "must match exactly, including any trailing slash") {
+			t.Errorf("logs = %s", logs.String())
+		}
+	})
 }
 
 func TestServeInvalidSPFileExitsWithConfigCode(t *testing.T) {
