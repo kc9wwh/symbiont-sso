@@ -84,7 +84,7 @@ func testSPConfigs() []config.ServiceProvider {
 	}
 }
 
-func newTestIdP(t *testing.T, attrs AttributeSource) *IdP {
+func newTestIdP(t *testing.T) *IdP {
 	t.Helper()
 	key, cert := testKeyPair(t)
 	sps, err := NewServiceProviders(testSPConfigs())
@@ -92,7 +92,7 @@ func newTestIdP(t *testing.T, attrs AttributeSource) *IdP {
 		t.Fatal(err)
 	}
 	base, _ := url.Parse(testBase)
-	p, err := New(Options{BaseURL: base, Certificate: cert, Key: key, SPs: sps, Attributes: attrs})
+	p, err := New(Options{BaseURL: base, Certificate: cert, Key: key, SPs: sps})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,6 +169,15 @@ func rawPostRequest(samlRequest, relayState string) *http.Request {
 	r := httptest.NewRequest(http.MethodPost, testBase+SSOPath, strings.NewReader(form.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return r
+}
+
+func mustB64(t *testing.T, s string) []byte {
+	t.Helper()
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
 
 // acsPost turns a PostForm into the request the browser would POST to the

@@ -13,7 +13,7 @@ import (
 // bridge in the middle, crewjam SP (as Fleet) downstream.
 func TestE2ESPInitiated(t *testing.T) {
 	e := newE2E(t, e2eOpts{fetchUserinfo: true})
-	e.oidc.QueueUser(oidctest.Alice("fleet-admins"))
+	e.queueFirst(oidctest.Alice("fleet-admins"))
 	sp := e.sp(e2eAdminEntity, e2eAdminACS)
 
 	ssoURL, reqID := e.startSSO(sp, "fleet-relay")
@@ -64,7 +64,7 @@ func TestE2ESessionReuse(t *testing.T) {
 	ssoURL, reqID := e.startSSO(sp, "")
 	resp := e.do(http.MethodGet, ssoURL, nil)
 	a, _ := e.deliver(resp, sp, reqID)
-	if a.Subject.NameID.Value != "jane.doe@example.com" {
+	if a.Subject.NameID.Value != "admin@example.com" {
 		t.Errorf("NameID = %q", a.Subject.NameID.Value)
 	}
 

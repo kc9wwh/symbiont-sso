@@ -184,12 +184,12 @@ func TestServeStartsAndStopsOnCancel(t *testing.T) {
 	if strings.Contains(out, env[config.EnvOIDCClientSecret]) {
 		t.Errorf("logs leaked OIDC client secret")
 	}
-	// Pre-release: exactly one WARN that access policy is not enforced.
-	if n := strings.Count(out, accessNotEnforcedWarning); n != 1 {
-		t.Errorf("access-not-enforced warning logged %d times, want 1", n)
+	if strings.Contains(out, "not enforced") {
+		t.Errorf("pre-release access warning still logged:\n%s", out)
 	}
-	if !strings.Contains(out, `"level":"WARN","msg":"`+accessNotEnforcedWarning+`"`) {
-		t.Errorf("access-not-enforced warning not at WARN level:\n%s", out)
+	// The only expected boot WARN is the plain-http base URL notice.
+	if n := strings.Count(out, `"level":"WARN"`); n != 1 || !strings.Contains(out, "plain http") {
+		t.Errorf("want exactly one WARN (plain http), got %d:\n%s", n, out)
 	}
 }
 

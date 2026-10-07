@@ -4,7 +4,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"net/url"
 
 	"github.com/kc9wwh/symbiont-sso/internal/idp"
 	"github.com/kc9wwh/symbiont-sso/internal/oidcrp"
@@ -40,11 +39,7 @@ func (s *Server) resume(w http.ResponseWriter, r *http.Request, log *slog.Logger
 			s.callbackFail(w, r, log, catSPGone, nil, http.StatusNotFound)
 			return
 		}
-		target := loginPath(sp.ID)
-		if p.RelayState != "" {
-			target += "?" + url.Values{"RelayState": {p.RelayState}}.Encode()
-		}
-		http.Redirect(w, r, target, http.StatusFound)
+		http.Redirect(w, r, s.loginReturnURL(sp.ID, p.RelayState), http.StatusFound)
 	default:
 		s.callbackFail(w, r, log, catUnknownKind, nil, http.StatusBadRequest)
 	}

@@ -92,7 +92,7 @@ func setDefault(d *time.Duration, def time.Duration) {
 // Handler returns the fully wrapped root handler (useful for tests).
 func (s *Server) Handler() http.Handler { return s.handler }
 
-// routes registers every endpoint. Phase 4 adds /login/{sp_id}.
+// routes registers every endpoint.
 func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	if s.opts.IdP != nil {
@@ -102,6 +102,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	}
 	if s.opts.Login != nil {
 		mux.HandleFunc("GET "+CallbackPath, s.handleCallback)
+		mux.HandleFunc("GET "+LoginPathPrefix+"{sp_id}", s.handleLogin)
 	}
 }
 

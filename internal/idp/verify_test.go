@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/crewjam/saml"
-
-	"github.com/kc9wwh/symbiont-sso/internal/config"
 )
 
 func containsAll(s string, subs ...string) bool {
@@ -60,7 +58,7 @@ func responseDoc(t *testing.T, f *PostForm) *xmlResponse {
 	return &r
 }
 
-func issue(t *testing.T, p *IdP, entityID, acs string, attrs AttributeSource) *PostForm {
+func issue(t *testing.T, p *IdP, entityID, acs string) *PostForm {
 	t.Helper()
 	sp := testSP(t, p, entityID, acs)
 	r, _ := redirectRequest(t, sp, "")
@@ -68,7 +66,7 @@ func issue(t *testing.T, p *IdP, entityID, acs string, attrs AttributeSource) *P
 	if err != nil {
 		t.Fatal(err)
 	}
-	form, err := p.Respond(req, testIdentity())
+	form, err := p.Respond(req, testIdentity(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +76,7 @@ func issue(t *testing.T, p *IdP, entityID, acs string, attrs AttributeSource) *P
 // VERIFY: crewjam's DefaultAssertionMaker emits a transient NameID (which
 // Fleet cannot use as a user ID). Pins the reason our AssertionMaker exists.
 func TestVerifyCrewjamDefaultNameIDIsTransient(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	sp := testSP(t, p, adminEntityID, adminACS)
 	r, _ := redirectRequest(t, sp, "")
 	req, err := p.ParseRequest(r)
@@ -97,8 +95,8 @@ func TestVerifyCrewjamDefaultNameIDIsTransient(t *testing.T) {
 // VERIFY: both the Response and the Assertion carry an enveloped
 // RSA-SHA256 signature (crewjam would default to RSA-SHA1).
 func TestVerifyResponseAndAssertionSignedRSASHA256(t *testing.T) {
-	p := newTestIdP(t, nil)
-	root := responseDoc(t, issue(t, p, adminEntityID, adminACS, nil))
+	p := newTestIdP(t)
+	root := responseDoc(t, issue(t, p, adminEntityID, adminACS))
 
 	if root.XMLName.Local != "Response" || root.XMLName.Space != "urn:oasis:names:tc:SAML:2.0:protocol" {
 		t.Fatalf("root = %v", root.XMLName)
@@ -128,7 +126,7 @@ func TestVerifyAssertionTimingUsesCrewjamDefaults(t *testing.T) {
 	if saml.MaxIssueDelay != 90*time.Second || saml.MaxClockSkew != 180*time.Second {
 		t.Fatalf("crewjam defaults changed: MaxIssueDelay=%v MaxClockSkew=%v", saml.MaxIssueDelay, saml.MaxClockSkew)
 	}
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	sp := testSP(t, p, adminEntityID, adminACS)
 	r, _ := redirectRequest(t, sp, "")
 	req, err := p.ParseRequest(r)
@@ -137,7 +135,7 @@ func TestVerifyAssertionTimingUsesCrewjamDefaults(t *testing.T) {
 	}
 	issued := time.Now().UTC().Add(4 * time.Minute) // e.g. replay after a slow passkey prompt
 	p.now = func() time.Time { return issued }
-	if _, err := p.Respond(req, testIdentity()); err != nil {
+	if _, err := p.Respond(req, testIdentity(), nil); err != nil {
 		t.Fatal(err)
 	}
 	a := req.req.Assertion
@@ -155,18 +153,12 @@ func TestVerifyAssertionTimingUsesCrewjamDefaults(t *testing.T) {
 	}
 }
 
-type fixedAttrs []Attribute
-
-func (f fixedAttrs) Attributes(*config.ServiceProvider, *Identity) ([]Attribute, error) {
-	return f, nil
-}
-
 // VERIFY: attribute statement contains exactly email, name, then mapped
 // attributes; NameFormat unspecified, xs:string, single-valued.
 func TestVerifyAttributeShape(t *testing.T) {
-	p := newTestIdP(t, fixedAttrs{{Name: "FLEET_JIT_USER_ROLE_GLOBAL", Value: "admin"}})
+	p := newTestIdP(t)
 	sp := testSP(t, p, adminEntityID, adminACS)
-	a, _ := roundTrip(t, p, sp, saml.HTTPRedirectBinding)
+	a, _ := roundTrip(t, p, sp, saml.HTTPRedirectBinding, Attribute{Name: "FLEET_JIT_USER_ROLE_GLOBAL", Value: "admin"})
 
 	want := []struct{ name, value string }{
 		{"email", testUserEmail}, {"name", testUserName}, {"FLEET_JIT_USER_ROLE_GLOBAL", "admin"},
@@ -187,23 +179,24 @@ func TestVerifyAttributeShape(t *testing.T) {
 }
 
 func TestReservedAttributeFromSourceRejected(t *testing.T) {
-	p := newTestIdP(t, fixedAttrs{{Name: "email", Value: "evil@example.com"}})
+	p := newTestIdP(t)
 	sp := testSP(t, p, adminEntityID, adminACS)
 	r, _ := redirectRequest(t, sp, "")
 	req, _ := p.ParseRequest(r)
-	if _, err := p.Respond(req, testIdentity()); err == nil || !strings.Contains(err.Error(), "reserved") {
+	evil := []Attribute{{Name: "email", Value: "evil@example.com"}}
+	if _, err := p.Respond(req, testIdentity(), evil); err == nil || !strings.Contains(err.Error(), "reserved") {
 		t.Fatalf("err = %v", err)
 	}
 }
 
 func TestNameAttributeOmittedWhenEmptyAndEmailRequired(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	sp := testSP(t, p, adminEntityID, adminACS)
 	r, reqID := redirectRequest(t, sp, "")
 	req, _ := p.ParseRequest(r)
 	id := testIdentity()
 	id.Name = ""
-	form, err := p.Respond(req, id)
+	form, err := p.Respond(req, id, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +207,7 @@ func TestNameAttributeOmittedWhenEmptyAndEmailRequired(t *testing.T) {
 	if n := len(a.AttributeStatements[0].Attributes); n != 1 {
 		t.Errorf("want only email attribute, got %d", n)
 	}
-	if _, err := p.Respond(req, &Identity{}); err != ErrNoEmail {
+	if _, err := p.Respond(req, &Identity{}, nil); err != ErrNoEmail {
 		t.Errorf("empty email: err = %v, want ErrNoEmail", err)
 	}
 }
@@ -223,7 +216,7 @@ func TestNameAttributeOmittedWhenEmptyAndEmailRequired(t *testing.T) {
 // metadata order. Our metadata puts the IdP-initiated ACS first (and marks
 // it isDefault) even though config lists adminACS2 first.
 func TestVerifyIDPInitiatedACSIsFirstInMetadata(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	md, err := p.SPs().GetServiceProvider(nil, adminEntityID)
 	if err != nil {
 		t.Fatal(err)

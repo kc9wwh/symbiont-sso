@@ -44,7 +44,7 @@ func postXML(x string) *http.Request {
 }
 
 func TestUnknownEntityIDRejected(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	sp := testSP(t, p, "https://unknown.example.com", adminACS)
 	r, _ := redirectRequest(t, sp, "")
 	re := requireCategory(t, mustFail(p.ParseRequest(r)), CategoryUnknownSP)
@@ -54,7 +54,7 @@ func TestUnknownEntityIDRejected(t *testing.T) {
 }
 
 func TestUnlistedACSRejected(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	sp := testSP(t, p, adminEntityID, "https://evil.example.com/acs")
 	r, _ := redirectRequest(t, sp, "")
 	_ = requireCategory(t, mustFail(p.ParseRequest(r)), CategoryACSNotAllowed)
@@ -62,7 +62,7 @@ func TestUnlistedACSRejected(t *testing.T) {
 
 // An ACS URL belonging to SP A, requested by SP B, must be rejected.
 func TestCrossSPACSRejected(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	spB := testSP(t, p, mdmEntityID, adminACS)
 	r, _ := redirectRequest(t, spB, "")
 	re := requireCategory(t, mustFail(p.ParseRequest(r)), CategoryACSNotAllowed)
@@ -72,7 +72,7 @@ func TestCrossSPACSRejected(t *testing.T) {
 }
 
 func TestACSIndexHandling(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	// Index 0 in metadata order is the IdP-initiated ACS (adminACS).
 	req, err := p.ParseRequest(postXML(authnXML(adminEntityID, "", ` AssertionConsumerServiceIndex="0"`)))
 	if err != nil {
@@ -86,7 +86,7 @@ func TestACSIndexHandling(t *testing.T) {
 }
 
 func TestNoACSInRequestUsesDefault(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	req, err := p.ParseRequest(postXML(authnXML(mdmEntityID, "", "")))
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +97,7 @@ func TestNoACSInRequestUsesDefault(t *testing.T) {
 }
 
 func TestMalformedRequests(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	valid := base64.StdEncoding.EncodeToString([]byte(authnXML(adminEntityID, adminACS, "")))
 	plainB64 := url.QueryEscape(base64.StdEncoding.EncodeToString([]byte("plain")))
 	tests := []struct {
@@ -124,7 +124,7 @@ func TestMalformedRequests(t *testing.T) {
 }
 
 func TestStaleRequestRejectedButReplayableAtReceivedTime(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	sp := testSP(t, p, adminEntityID, adminACS)
 	r, _ := redirectRequest(t, sp, "")
 	req, err := p.ParseRequest(r)

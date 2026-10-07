@@ -84,6 +84,11 @@ func Validate(attrs []Attribute, passthroughPrefixes []string, fleetRoles bool) 
 		}
 		fleetIDs[id] = scope
 	}
+	if fleetRoles {
+		if p := defaultScopeProblem(attrs); p != "" {
+			add("%s", p)
+		}
+	}
 	return problems
 }
 

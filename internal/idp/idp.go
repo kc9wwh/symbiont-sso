@@ -30,7 +30,6 @@ type Options struct {
 	Certificate *x509.Certificate
 	Key         *rsa.PrivateKey
 	SPs         *ServiceProviders
-	Attributes  AttributeSource
 	Logger      *slog.Logger
 	// Now overrides the clock (tests).
 	Now func() time.Time
@@ -56,7 +55,7 @@ func New(o Options) (*IdP, error) {
 	if o.Now == nil {
 		o.Now = func() time.Time { return time.Now().UTC() }
 	}
-	maker := &AssertionMaker{SPs: o.SPs, Attributes: o.Attributes}
+	maker := &AssertionMaker{SPs: o.SPs}
 	p := &IdP{sps: o.SPs, maker: maker, now: o.Now}
 	p.crew = &saml.IdentityProvider{
 		Key:                     o.Key,

@@ -14,7 +14,7 @@ import (
 )
 
 func TestDeflateBombBounded(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	var buf bytes.Buffer
 	fw, _ := flate.NewWriter(&buf, flate.BestCompression)
 	_, _ = fw.Write(bytes.Repeat([]byte("A"), 10<<20)) // 10 MB from ~10 KB
@@ -25,20 +25,20 @@ func TestDeflateBombBounded(t *testing.T) {
 }
 
 func TestOversizedQueryRejected(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	r := httptest.NewRequest(http.MethodGet, testBase+"/sso?SAMLRequest="+strings.Repeat("A", MaxRequestBytes+1), nil)
 	_ = requireCategory(t, mustFail(p.ParseRequest(r)), CategoryTooLarge)
 }
 
 func TestOversizedPostRejected(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	r := rawPostRequest(strings.Repeat("A", MaxRequestBytes+1), "")
 	r.Body = http.MaxBytesReader(httptest.NewRecorder(), r.Body, MaxRequestBytes)
 	_ = requireCategory(t, mustFail(p.ParseRequest(r)), CategoryTooLarge)
 }
 
 func TestOversizedDecodedXMLRejected(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	big := make([]byte, MaxRequestBytes+1)
 	if _, err := p.ParseXML(httptest.NewRequest(http.MethodGet, "/", nil), big, "", p.now()); err == nil {
 		t.Fatal("expected error")
@@ -62,7 +62,7 @@ func TestValidRelayState(t *testing.T) {
 }
 
 func TestMetadata(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	md := p.Metadata()
 	if md.EntityID != testBase+MetadataPath || p.EntityID() != md.EntityID {
 		t.Errorf("EntityID = %q", md.EntityID)
@@ -103,24 +103,26 @@ func TestNewServiceProvidersRejectsDuplicates(t *testing.T) {
 	}
 }
 
-// The saml.AssertionMaker adapter (used only if crewjam's own handlers are
-// ever invoked) must also produce our Fleet-compatible assertion.
-func TestMakeAssertionAdapter(t *testing.T) {
-	p := newTestIdP(t, nil)
+// crewjam's session-driven handlers would bypass access policy, so the
+// saml.AssertionMaker adapter fails closed and crewjam's own ServeSSO /
+// ServeIDPInitiated can never issue an assertion.
+func TestCrewjamHandlersFailClosed(t *testing.T) {
+	p := newTestIdP(t)
 	sp := testSP(t, p, adminEntityID, adminACS)
 	r, _ := redirectRequest(t, sp, "")
 	req, err := p.ParseRequest(r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := p.maker.MakeAssertion(req.req, &saml.Session{UserEmail: testUserEmail, Index: "i"}); err != nil {
-		t.Fatal(err)
+	if err := p.maker.MakeAssertion(req.req, &saml.Session{UserEmail: testUserEmail}); err != ErrNotSupported {
+		t.Fatalf("MakeAssertion err = %v, want ErrNotSupported", err)
 	}
-	if f := req.req.Assertion.Subject.NameID.Format; f != string(saml.EmailAddressNameIDFormat) {
-		t.Errorf("format = %q", f)
+	if req.req.Assertion != nil {
+		t.Error("assertion produced")
 	}
-	req.req.ServiceProviderMetadata = &saml.EntityDescriptor{EntityID: "nope"}
-	if err := p.maker.MakeAssertion(req.req, &saml.Session{UserEmail: testUserEmail}); err == nil {
-		t.Error("unknown SP accepted")
+	rec := httptest.NewRecorder()
+	p.crew.ServeIDPInitiated(rec, httptest.NewRequest(http.MethodGet, "/", nil), adminEntityID, "")
+	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "SAMLResponse") {
+		t.Errorf("crewjam ServeIDPInitiated = %d %q", rec.Code, rec.Body.String())
 	}
 }

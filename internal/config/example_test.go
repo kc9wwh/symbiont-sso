@@ -30,6 +30,39 @@ func TestShippedExampleIsValid(t *testing.T) {
 	}
 }
 
+func TestShippedMappingExampleIsValid(t *testing.T) {
+	_, file, _, _ := runtime.Caller(0)
+	path := filepath.Join(filepath.Dir(file), "..", "..", "examples", "mapping.fleet.yaml")
+	sps, warnings, err := LoadServiceProviders(path)
+	if err != nil {
+		t.Fatalf("examples/mapping.fleet.yaml: %v", err)
+	}
+	if len(warnings) != 0 || len(sps) != 1 || len(sps[0].Attributes) != 2 {
+		t.Errorf("warnings=%v sps=%+v", warnings, sps)
+	}
+}
+
+func TestFleetDefaultsInBothScopesIsStartupError(t *testing.T) {
+	both := `
+service_providers:
+  - id: x
+    entity_id: x
+    acs_urls: [https://x.example.com/acs]
+    access: {allow_groups: [g]}
+    attributes:
+      - {name: FLEET_JIT_USER_ROLE_GLOBAL, rules: [{group: a, value: admin}], default: observer}
+      - {name: FLEET_JIT_USER_ROLE_FLEET_2, default: observer}
+`
+	requireProblem(t, spProblems(t, both), `service provider "x": FLEET_JIT_USER_ROLE_GLOBAL and FLEET_JIT_USER_ROLE_FLEET_2 both set a default`)
+
+	// A fleet-level default with GLOBAL rules (no GLOBAL default) is fine and
+	// produces no warning: defaults never cause conflicts.
+	_, warnings := parseSPs(t, strings.Replace(both, ", default: observer}\n      - {name: FLEET_JIT_USER_ROLE_FLEET_2", "}\n      - {name: FLEET_JIT_USER_ROLE_FLEET_2", 1))
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v", warnings)
+	}
+}
+
 func TestIDPInitiatedToFleetMDMACSWarns(t *testing.T) {
 	_, warnings := parseSPs(t, `
 service_providers:

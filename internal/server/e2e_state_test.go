@@ -145,7 +145,7 @@ func TestE2EUpstreamFailures(t *testing.T) {
 		e := newE2E(t, e2eOpts{fetchUserinfo: true})
 		u := oidctest.Alice("fleet-admins")
 		u.UserinfoClaims["sub"] = "someone-else"
-		e.oidc.QueueUser(u)
+		e.queueFirst(u)
 		ssoURL, _ := e.startSSO(e.sp(e2eAdminEntity, e2eAdminACS), "")
 		e.expectFail(e.callback(e.toIdP(ssoURL)), http.StatusBadGateway, "userinfo_sub_mismatch")
 	})

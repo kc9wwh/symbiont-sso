@@ -16,7 +16,7 @@ func TestValidateAcceptsFleetExample(t *testing.T) {
 		}, Default: ptr("observer")},
 		{Name: "FLEET_JIT_USER_ROLE_FLEET_2", Rules: []Rule{{Group: "workstations-maint", Value: "maintainer"}}},
 		{Name: "FLEET_JIT_USER_ROLE_TEAM_3", Rules: []Rule{{Group: "t", Value: "technician"}}},
-		{Name: "FLEET_JIT_USER_ROLE_FLEET_4", Default: ptr("null")},
+		{Name: "FLEET_JIT_USER_ROLE_FLEET_4", Rules: []Rule{{Group: "f4", Value: "null"}}},
 		{Name: "department", Rules: []Rule{{Group: "x", Value: "anything-goes"}}},
 	}
 	if p := Validate(attrs, []string{"FLEET_JIT_USER_ROLE_"}, true); len(p) != 0 {

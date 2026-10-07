@@ -30,7 +30,7 @@ func TestE2EGlobalEmailPolicy(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newE2E(t, e2eOpts{policy: tc.policy})
-			e.oidc.QueueUser(tc.user)
+			e.queueFirst(tc.user)
 			ssoURL, _ := e.startSSO(e.sp(e2eAdminEntity, e2eAdminACS), "")
 			body := e.expectFail(e.callback(e.toIdP(ssoURL)), http.StatusForbidden, tc.cat)
 			if !strings.Contains(body, tc.msg) {

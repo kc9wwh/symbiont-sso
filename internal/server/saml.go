@@ -2,19 +2,18 @@ package server
 
 import (
 	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/kc9wwh/symbiont-sso/internal/idp"
 	"github.com/kc9wwh/symbiont-sso/internal/web"
 )
 
-// Sessions resolves the authenticated identity for an SSO request.
+// Sessions resolves the authenticated identity for an SSO request, SP- or
+// IdP-initiated (req.IDPInitiated).
 //
 // Identity returns the user's identity, or nil after it has fully handled
 // the response itself (typically a redirect to the upstream OIDC login).
-// Phase 2 uses a fixed test identity; phase 3 supplies the cookie-backed
-// implementation.
+// It performs authentication only; authorization happens in Server.issue.
 type Sessions interface {
 	Identity(w http.ResponseWriter, r *http.Request, req *idp.AuthnRequest) *idp.Identity
 }
@@ -73,45 +72,7 @@ func (s *Server) handleSSO(w http.ResponseWriter, r *http.Request) {
 	if identity == nil {
 		return // Sessions wrote the response (e.g. redirect to the IdP)
 	}
-	s.respond(w, r, log, req, identity)
-}
-
-// respond issues the signed SAML Response and renders the auto-POST page.
-func (s *Server) respond(w http.ResponseWriter, r *http.Request, log *slog.Logger, req *idp.AuthnRequest, id *idp.Identity) {
-	form, err := s.opts.IdP.Respond(req, id)
-	if err != nil {
-		if errors.Is(err, idp.ErrNoEmail) {
-			log.WarnContext(r.Context(), "sso rejected", "error_category", "missing_email")
-			s.errorPage(w, r, http.StatusForbidden, "Sign-in failed",
-				"Your account has no email address, which is required to sign in.")
-			return
-		}
-		log.ErrorContext(r.Context(), "issue saml response", "error_category", "assertion_failed", "error", err)
-		s.errorPage(w, r, http.StatusInternalServerError, "Sign-in failed",
-			"Something went wrong while signing you in. Please try again.")
-		return
-	}
-	origin, err := web.Origin(form.Action)
-	if err != nil {
-		log.ErrorContext(r.Context(), "invalid ACS URL", "error", err)
-		s.errorPage(w, r, http.StatusInternalServerError, "Sign-in failed", "The application is misconfigured.")
-		return
-	}
-	fields := []web.Field{{Name: "SAMLResponse", Value: form.SAMLResponse}}
-	if form.RelayState != "" {
-		fields = append(fields, web.Field{Name: "RelayState", Value: form.RelayState})
-	}
-	page := web.PostFormPage{
-		Action:     form.Action,
-		FormAction: origin,
-		Fields:     fields,
-		Title:      "Signing you in to " + req.SP.DisplayName + "…",
-	}
-	if err := web.WritePostForm(w, page); err != nil {
-		log.ErrorContext(r.Context(), "write saml response page", "error", err)
-		return
-	}
-	log.InfoContext(r.Context(), "sso success", "email", id.Email, "acs_url", form.Action)
+	s.issue(w, r, log, req, identity)
 }
 
 // rejectSSO logs a request validation failure in detail and shows a generic

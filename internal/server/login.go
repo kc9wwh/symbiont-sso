@@ -94,7 +94,11 @@ type oidcSessions struct{ s *Server }
 
 func (o oidcSessions) Identity(w http.ResponseWriter, r *http.Request, req *idp.AuthnRequest) *idp.Identity {
 	s := o.s
-	log := s.log.With("flow", string(session.KindSP), "sp_id", req.SP.ID)
+	kind := session.KindSP
+	if req.IDPInitiated {
+		kind = session.KindIDP
+	}
+	log := s.log.With("flow", string(kind), "sp_id", req.SP.ID)
 	sess, reason := s.currentSession(r)
 	if sess != nil {
 		return identityFromSession(sess)
@@ -112,9 +116,9 @@ func (o oidcSessions) Identity(w http.ResponseWriter, r *http.Request, req *idp.
 		log.DebugContext(r.Context(), "session cookie not usable", "reason", reason)
 	}
 	s.startLogin(w, r, session.Pending{
-		Kind:       session.KindSP,
+		Kind:       kind,
 		SPID:       req.SP.ID,
-		RawRequest: req.RawXML,
+		RawRequest: req.RawXML, // empty for IdP-initiated
 		RelayState: req.RelayState,
 		ReceivedAt: req.ReceivedAt,
 	})

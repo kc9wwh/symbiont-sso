@@ -71,7 +71,8 @@ func (c *idClaims) GetIssuer() (string, error)                   { return c.base
 func (c *idClaims) GetSubject() (string, error)                  { return c.base.GetSubject() }
 func (c *idClaims) GetAudience() (jwt.ClaimStrings, error)       { return c.base.GetAudience() }
 
-// Alice is a typical verified user in the given groups.
+// Alice is a typical verified user whose groups are only available from
+// userinfo.
 func Alice(groups ...string) *User {
 	return &User{
 		Sub: "sub-alice",
@@ -80,6 +81,19 @@ func Alice(groups ...string) *User {
 		},
 		UserinfoClaims: map[string]any{"groups": groups},
 	}
+}
+
+// Member returns a verified user whose groups (and any extra claims) are in
+// the ID token, as Pocket ID does with the groups scope.
+func Member(local string, groups []string, extra map[string]any) *User {
+	claims := map[string]any{
+		"email": local + "@example.com", "email_verified": true, "name": local,
+		"groups": groups,
+	}
+	for k, v := range extra {
+		claims[k] = v
+	}
+	return &User{Sub: "sub-" + local, IDToken: claims}
 }
 
 // Start runs a mock provider for the duration of the test.

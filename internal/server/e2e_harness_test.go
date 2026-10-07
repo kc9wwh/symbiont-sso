@@ -41,6 +41,14 @@ func (c *clock) advance(d time.Duration) {
 	c.off += d
 }
 
+// Test users (groups in the ID token). The harness's SPs mirror the
+// amendment: fleet-admin allows fleet-admins/fleet-maintainers and maps
+// FLEET_JIT_USER_ROLE_GLOBAL; fleet-enduser allows employees, no roles.
+var (
+	adminUser    = oidctest.Member("admin", []string{"fleet-admins", "employees"}, nil)
+	employeeUser = oidctest.Member("emp", []string{"employees"}, nil)
+)
+
 // e2e is a running bridge (httptest, http://127.0.0.1) wired to a mock OIDC
 // provider, plus a browser with a cookie jar.
 type e2e struct {
@@ -61,6 +69,43 @@ type e2eOpts struct {
 	fetchUserinfo bool
 	sessionTTL    time.Duration
 	maxSessions   int
+	// sps overrides the default service providers (parsed from YAML).
+	sps []config.ServiceProvider
+	// anyUser keeps mockoidc's default user instead of queueing adminUser.
+	anyUser bool
+}
+
+// defaultE2ESPs is the amendment's two-SP setup, loaded through the real
+// config parser so tests exercise the shipped validation.
+func defaultE2ESPs(t *testing.T) []config.ServiceProvider {
+	t.Helper()
+	sps, _, err := config.ParseServiceProviders([]byte(`
+service_providers:
+  - id: fleet-admin
+    display_name: Fleet
+    entity_id: ` + e2eAdminEntity + `
+    acs_urls: [` + e2eAdminACS + `]
+    idp_initiated: {enabled: true}
+    access: {allow_groups: [fleet-admins, fleet-maintainers]}
+    fleet_role_validation: true
+    attributes:
+      - name: FLEET_JIT_USER_ROLE_GLOBAL
+        rules:
+          - {group: fleet-admins, value: admin}
+          - {group: fleet-maintainers, value: maintainer}
+  - id: fleet-enduser
+    display_name: Fleet device enrollment
+    entity_id: ` + e2eMDMEntity + `
+    acs_urls: [` + e2eMDMACS + `]
+    idp_initiated: {enabled: false}
+    access: {allow_groups: [employees]}
+    fleet_role_validation: false
+    attributes: []
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sps
 }
 
 func newE2E(t *testing.T, o e2eOpts) *e2e {
@@ -76,13 +121,11 @@ func newE2E(t *testing.T, o e2eOpts) *e2e {
 	base, _ := url.Parse(e.bridge.URL)
 
 	key, cert := serverKeyPair(t)
-	sps, err := idp.NewServiceProviders([]config.ServiceProvider{
-		{ID: "fleet-admin", DisplayName: "Fleet", EntityID: e2eAdminEntity, ACSURLs: []string{e2eAdminACS},
-			IDPInitiatedEnabled: true, IDPInitiatedACSURL: e2eAdminACS,
-			Access: config.AccessPolicy{AllowGroups: []string{"fleet-admins"}}},
-		{ID: "fleet-enduser", DisplayName: "Fleet device enrollment", EntityID: e2eMDMEntity, ACSURLs: []string{e2eMDMACS},
-			Access: config.AccessPolicy{AllowGroups: []string{"employees"}}},
-	})
+	spCfgs := o.sps
+	if spCfgs == nil {
+		spCfgs = defaultE2ESPs(t)
+	}
+	sps, err := idp.NewServiceProviders(spCfgs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +155,23 @@ func newE2E(t *testing.T, o e2eOpts) *e2e {
 
 	jar, _ := cookiejar.New(nil)
 	e.browser = &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	if !o.anyUser {
+		// mockoidc pops one queued user per authorization and otherwise
+		// falls back to its built-in user (in no groups). Default to an
+		// allowed admin; tests pick other users with queueFirst.
+		for range 32 {
+			e.oidc.QueueUser(adminUser)
+		}
+	}
 	return e
+}
+
+// queueFirst makes u the user for the next upstream login.
+func (e *e2e) queueFirst(u mockoidc.User) {
+	q := e.oidc.UserQueue
+	q.Lock()
+	defer q.Unlock()
+	q.Queue = append([]mockoidc.User{u}, q.Queue...)
 }
 
 // sp returns a crewjam ServiceProvider (as Fleet uses) trusting the bridge.

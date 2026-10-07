@@ -8,15 +8,47 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/crewjam/saml"
 
+	"github.com/kc9wwh/symbiont-sso/internal/mapping"
 	"github.com/kc9wwh/symbiont-sso/internal/oidcrp/oidctest"
 )
 
 func oidctestAuthorize(t *testing.T, authURL string) *url.URL { return oidctest.Authorize(t, authURL) }
+
+// privateErr unwraps crewjam's deliberately opaque InvalidResponseError.
+func privateErr(err error) error {
+	if ire, ok := err.(*saml.InvalidResponseError); ok {
+		return ire.PrivateErr
+	}
+	return err
+}
+
+var referenceRE = regexp.MustCompile(`Reference: [0-9a-f]+`)
+
+func stripReference(body string) string { return referenceRE.ReplaceAllString(body, "") }
+
+// loginReturnPath is the callback's redirect target for spID.
+func (e *e2e) loginReturnPath(spID string) string {
+	srv := &Server{opts: Options{Login: e.login}}
+	return srv.loginReturnURL(spID, "")
+}
+
+func oidctestMember(local string, groups []string, extra map[string]any) *oidctest.User {
+	return oidctest.Member(local, groups, extra)
+}
+
+func memberOf(local string, groups ...string) *oidctest.User {
+	return oidctest.Member(local, groups, nil)
+}
+
+func roleRule(name, group, value string) mapping.Attribute {
+	return mapping.Attribute{Name: name, Rules: []mapping.Rule{{Group: group, Value: value}}}
+}
 
 // deflatedToRaw converts an HTTP-Redirect SAMLRequest (deflate+base64) into
 // the HTTP-POST encoding (base64 of the raw XML).

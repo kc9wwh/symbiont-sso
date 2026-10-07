@@ -45,48 +45,27 @@ type Attribute struct {
 	Value string
 }
 
-// AttributeSource resolves the per-SP mapped attributes for an identity. An
-// error refuses the assertion (e.g. a Fleet role conflict).
-type AttributeSource interface {
-	Attributes(sp *config.ServiceProvider, id *Identity) ([]Attribute, error)
-}
-
-// NoAttributes sends only email and name.
-type NoAttributes struct{}
-
-// Attributes implements AttributeSource.
-func (NoAttributes) Attributes(*config.ServiceProvider, *Identity) ([]Attribute, error) {
-	return nil, nil
-}
-
 // ErrNoEmail is returned when an identity has no email to use as NameID.
 var ErrNoEmail = errors.New("identity has no email address")
 
 // AssertionMaker builds Fleet-compatible assertions, replacing crewjam's
 // DefaultAssertionMaker (transient NameID, OID-named attributes, client IP
-// in SubjectConfirmationData).
+// in SubjectConfirmationData). It performs no authorization or mapping:
+// callers pass the attributes already decided for the target SP.
 type AssertionMaker struct {
-	SPs        *ServiceProviders
-	Attributes AttributeSource
+	SPs *ServiceProviders
 }
 
 var _ saml.AssertionMaker = (*AssertionMaker)(nil)
 
-// Make builds req.Assertion for id, addressed to sp only.
-func (m *AssertionMaker) Make(req *saml.IdpAuthnRequest, sp *config.ServiceProvider, id *Identity) error {
+// Make builds req.Assertion for id, addressed to sp only, carrying email,
+// name, and mapped.
+func (m *AssertionMaker) Make(req *saml.IdpAuthnRequest, sp *config.ServiceProvider, id *Identity, mapped []Attribute) error {
 	if id == nil || id.Email == "" {
 		return ErrNoEmail
 	}
 	if req.ACSEndpoint == nil {
 		return errors.New("request has no resolved ACS endpoint")
-	}
-	src := m.Attributes
-	if src == nil {
-		src = NoAttributes{}
-	}
-	mapped, err := src.Attributes(sp, id)
-	if err != nil {
-		return err
 	}
 
 	attrs := make([]saml.Attribute, 0, 2+len(mapped))
@@ -152,24 +131,15 @@ func (m *AssertionMaker) Make(req *saml.IdpAuthnRequest, sp *config.ServiceProvi
 	return nil
 }
 
+// ErrNotSupported is returned by MakeAssertion: crewjam's own SSO handlers
+// are never used, because they bypass symbiont's access policy.
+var ErrNotSupported = errors.New("idp: crewjam session-driven assertions are disabled; use IdP.Respond")
+
 // MakeAssertion implements saml.AssertionMaker so a crewjam IdentityProvider
-// configured with this maker never falls back to DefaultAssertionMaker.
-// symbiont itself calls Make with the full Identity.
-func (m *AssertionMaker) MakeAssertion(req *saml.IdpAuthnRequest, s *saml.Session) error {
-	if req.ServiceProviderMetadata == nil {
-		return errors.New("request has no resolved service provider")
-	}
-	sp, ok := m.SPs.ByEntityID(req.ServiceProviderMetadata.EntityID)
-	if !ok {
-		return fmt.Errorf("unknown service provider %q", req.ServiceProviderMetadata.EntityID)
-	}
-	return m.Make(req, sp, &Identity{
-		SessionID: s.Index,
-		Email:     s.UserEmail,
-		Name:      s.UserCommonName,
-		Groups:    s.Groups,
-		AuthTime:  s.CreateTime,
-	})
+// configured with this maker never falls back to DefaultAssertionMaker. It
+// fails closed: every assertion must go through access.Decide.
+func (m *AssertionMaker) MakeAssertion(*saml.IdpAuthnRequest, *saml.Session) error {
+	return ErrNotSupported
 }
 
 func stringAttribute(name, value string) saml.Attribute {

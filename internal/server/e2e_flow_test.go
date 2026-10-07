@@ -66,7 +66,8 @@ func (e *e2e) deliver(resp *http.Response, sp *saml.ServiceProvider, reqID strin
 	return a, fields
 }
 
-// fullLogin runs SP-initiated SSO from scratch through the replay.
+// fullLogin runs SP-initiated SSO from scratch through the replay. The
+// upstream user is the next queued one, or adminUser.
 func (e *e2e) fullLogin(sp *saml.ServiceProvider, relay string) (*saml.Assertion, url.Values) {
 	e.t.Helper()
 	ssoURL, reqID := e.startSSO(sp, relay)

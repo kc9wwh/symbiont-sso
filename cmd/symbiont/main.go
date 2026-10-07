@@ -42,6 +42,10 @@ Usage:
   symbiont [serve]    Run the bridge (default). Configured via environment variables.
   symbiont gencert    Generate a SAML signing certificate and key
                       (symbiont gencert --cn saml.example.com).
+  symbiont check-mapping
+                      Evaluate access policy and attribute mapping against
+                      sample claims (symbiont check-mapping --file symbiont.yaml
+                      --claims claims.json [--sp fleet-admin]).
   symbiont version    Print the version and exit.
   symbiont help       Show this help.
 
@@ -70,6 +74,8 @@ func run(ctx context.Context, args []string, lookup config.LookupFunc, stdout, s
 		return runServe(ctx, lookup, stdout)
 	case "gencert":
 		return runGencert(args, stdout, stderr)
+	case "check-mapping":
+		return runCheckMapping(args, stdout, stderr)
 	case "version", "--version", "-v":
 		_, _ = fmt.Fprintln(stdout, "symbiont", buildVersion())
 		return exitOK
@@ -132,11 +138,6 @@ func runServe(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) i
 	return exitOK
 }
 
-// accessNotEnforcedWarning is logged once at boot while per-SP access policy
-// is parsed but not enforced. Remove in phase 4.
-const accessNotEnforcedWarning = "access policy is not enforced in this build; " +
-	"all authenticated users can obtain assertions for every configured SP"
-
 // buildIdP loads and validates the service provider file and constructs the
 // SAML identity provider.
 func buildIdP(cfg *config.Config, logger *slog.Logger) (*idp.IdP, error) {
@@ -151,8 +152,6 @@ func buildIdP(cfg *config.Config, logger *slog.Logger) (*idp.IdP, error) {
 	if err != nil {
 		return nil, err
 	}
-	// TODO(phase 4): remove once /sso enforces per-SP access policy.
-	logger.Warn(accessNotEnforcedWarning)
 	for _, sp := range sps.All() {
 		logger.Info("service provider loaded",
 			"sp_id", sp.ID,

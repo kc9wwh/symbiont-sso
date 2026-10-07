@@ -7,7 +7,7 @@ import (
 	"github.com/crewjam/saml"
 )
 
-func roundTrip(t *testing.T, p *IdP, sp *saml.ServiceProvider, binding string) (*saml.Assertion, *PostForm) {
+func roundTrip(t *testing.T, p *IdP, sp *saml.ServiceProvider, binding string, attrs ...Attribute) (*saml.Assertion, *PostForm) {
 	t.Helper()
 	build := redirectRequest
 	if binding == saml.HTTPPostBinding {
@@ -18,7 +18,7 @@ func roundTrip(t *testing.T, p *IdP, sp *saml.ServiceProvider, binding string) (
 	if err != nil {
 		t.Fatalf("ParseRequest: %v", err)
 	}
-	form, err := p.Respond(req, testIdentity())
+	form, err := p.Respond(req, testIdentity(), attrs)
 	if err != nil {
 		t.Fatalf("Respond: %v", err)
 	}
@@ -37,7 +37,7 @@ func roundTrip(t *testing.T, p *IdP, sp *saml.ServiceProvider, binding string) (
 // ServiceProvider (as used by Fleet) sends an AuthnRequest and validates the
 // Response, including both signatures, audience and recipient.
 func TestSSORoundTripBothBindings(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	for _, binding := range []string{saml.HTTPRedirectBinding, saml.HTTPPostBinding} {
 		t.Run(binding, func(t *testing.T) {
 			sp := testSP(t, p, adminEntityID, adminACS)
@@ -76,7 +76,7 @@ func TestSSORoundTripBothBindings(t *testing.T) {
 }
 
 func TestSSORoundTripSecondSP(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	sp := testSP(t, p, mdmEntityID, mdmACS)
 	a, form := roundTrip(t, p, sp, saml.HTTPRedirectBinding)
 	if form.Action != mdmACS {
@@ -90,14 +90,14 @@ func TestSSORoundTripSecondSP(t *testing.T) {
 // TestAssertionForSPARejectedBySPB: an assertion minted for one SP must not
 // validate at another SP, even one sharing the IdP and ACS host.
 func TestAssertionForSPARejectedBySPB(t *testing.T) {
-	p := newTestIdP(t, nil)
+	p := newTestIdP(t)
 	spA := testSP(t, p, adminEntityID, adminACS)
 	r, reqID := redirectRequest(t, spA, "")
 	req, err := p.ParseRequest(r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	form, err := p.Respond(req, testIdentity())
+	form, err := p.Respond(req, testIdentity(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

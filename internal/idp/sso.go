@@ -25,6 +25,8 @@ type AuthnRequest struct {
 	// Replayed is set by the HTTP layer when this request is the bridge's
 	// own replay after an upstream login (verified via a signed token).
 	Replayed bool
+	// IDPInitiated marks an unsolicited (IdP-initiated) response.
+	IDPInitiated bool
 
 	req *saml.IdpAuthnRequest
 }
@@ -101,16 +103,60 @@ type PostForm struct {
 	RelayState   string
 }
 
+// IdPInitiated builds an unsolicited request for sp. It is addressed to
+// sp.IDPInitiatedACSURL explicitly (crewjam's ServeIDPInitiated would pick
+// the first POST ACS in metadata, and runs its session hook before the SP
+// lookup). The response carries no InResponseTo.
+func (p *IdP) IdPInitiated(r *http.Request, sp *config.ServiceProvider, relayState string) (*AuthnRequest, error) {
+	if !sp.IDPInitiatedEnabled || sp.IDPInitiatedACSURL == "" {
+		return nil, errorf(CategoryInvalid, sp.EntityID, "IdP-initiated login is disabled for %q", sp.ID)
+	}
+	if !ValidRelayState(relayState) {
+		return nil, errorf(CategoryRelayState, sp.EntityID, "RelayState must be at most %d bytes of printable ASCII", MaxRelayStateBytes)
+	}
+	md, err := p.sps.GetServiceProvider(r, sp.EntityID)
+	if err != nil {
+		return nil, errorf(CategoryUnknownSP, sp.EntityID, "service provider %q has no metadata", sp.ID)
+	}
+	var acs *saml.IndexedEndpoint
+	for i, e := range md.SPSSODescriptors[0].AssertionConsumerServices {
+		if e.Location == sp.IDPInitiatedACSURL && e.Binding == saml.HTTPPostBinding {
+			acs = &md.SPSSODescriptors[0].AssertionConsumerServices[i]
+			break
+		}
+	}
+	if acs == nil {
+		return nil, errorf(CategoryACSNotAllowed, sp.EntityID, "idp_initiated.acs_url is not an HTTP-POST ACS of %q", sp.ID)
+	}
+	now := p.now()
+	return &AuthnRequest{
+		SP:           sp,
+		RelayState:   relayState,
+		ReceivedAt:   now,
+		IDPInitiated: true,
+		req: &saml.IdpAuthnRequest{
+			IDP:                     p.crew,
+			HTTPRequest:             r,
+			RelayState:              relayState,
+			Now:                     now,
+			ServiceProviderMetadata: md,
+			SPSSODescriptor:         &md.SPSSODescriptors[0],
+			ACSEndpoint:             acs,
+		},
+	}, nil
+}
+
 // Respond issues a signed Response (with a signed Assertion) for id to the
-// request's service provider.
-func (p *IdP) Respond(a *AuthnRequest, id *Identity) (*PostForm, error) {
+// request's service provider, carrying email, name, and attrs. attrs must
+// come from the access decision for a.SP; Respond does no authorization.
+func (p *IdP) Respond(a *AuthnRequest, id *Identity, attrs []Attribute) (*PostForm, error) {
 	if a == nil || a.req == nil {
 		return nil, errors.New("idp: nil request")
 	}
 	// Validity was judged at ReceivedAt; the assertion itself is timed now.
 	a.req.Now = p.now()
 	a.req.Assertion, a.req.AssertionEl, a.req.ResponseEl = nil, nil, nil
-	if err := p.maker.Make(a.req, a.SP, id); err != nil {
+	if err := p.maker.Make(a.req, a.SP, id, attrs); err != nil {
 		return nil, err
 	}
 	form, err := a.req.PostBinding()
