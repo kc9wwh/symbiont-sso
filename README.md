@@ -1,8 +1,5 @@
 # symbiont
 
-> **Status:** feature-complete for the MVP; packaging (container image, CI)
-> and the full quick start / troubleshooting guide land in the next phase.
-
 symbiont is a small SAML identity provider that authenticates users against
 an upstream OpenID Connect provider. It lets SAML-only service providers
 (primarily [Fleet](https://fleetdm.com)) sign users in through OIDC-only
@@ -13,6 +10,155 @@ identity providers (such as [Pocket ID](https://pocket-id.org)).
                 ▲                                │   ▲                │
                 └──── signed SAML Response ◄─────┘   └── code + ID token
 ```
+
+**What it is:** a single stateless-ish container (in-memory sessions), one
+IdP identity serving several SAML service providers, each with its own
+access policy and attribute mapping (including Fleet JIT roles).
+
+**What it is not:** a user directory, an admin UI, or a SAML Single Logout
+endpoint. Fleet does not implement SAML SLO, so there is nothing to log out
+of; see [Sessions and re-authentication](#sessions-and-re-authentication).
+It runs as a single instance (sessions are in memory).
+
+## Quick start (Docker)
+
+You need: a public HTTPS hostname for the bridge (e.g. through Cloudflare
+Tunnel), an OIDC client at your IdP, and Fleet admin access.
+
+1. **Get the files**
+
+   ```sh
+   mkdir symbiont && cd symbiont
+   base=https://raw.githubusercontent.com/kc9wwh/symbiont-sso/main
+   curl -fsSLO $base/docker-compose.example.yml
+   curl -fsSL  $base/.env.example -o symbiont.env
+   curl -fsSL  $base/examples/symbiont.yaml -o symbiont.yaml
+   mv docker-compose.example.yml docker-compose.yml
+   ```
+
+2. **Create secrets** (the container runs as uid 65532 and must be able
+   to read them)
+
+   ```sh
+   mkdir secrets
+   docker run --rm -v "$PWD/secrets:/out" -u "$(id -u):$(id -g)" \
+     ghcr.io/kc9wwh/symbiont gencert --cn saml.example.com \
+     --out-cert /out/saml_cert.pem --out-key /out/saml_key.pem
+   openssl rand -base64 32 > secrets/session_secret
+   printf '%s' 'YOUR-OIDC-CLIENT-SECRET' > secrets/oidc_client_secret
+   chmod 0444 secrets/*
+   ```
+
+   With Docker Compose file-based secrets the files are bind-mounted with
+   host permissions, hence world-readable here; keep the `secrets/`
+   directory itself private (`chmod 0700 secrets`, owned by the deploying
+   user). On Swarm/Kubernetes use their native secret mechanisms instead.
+
+3. **Configure** `symbiont.env` (`SYMBIONT_BASE_URL`, `OIDC_ISSUER`,
+   `OIDC_CLIENT_ID`) and `symbiont.yaml` (your Fleet `entity_id` and ACS
+   URLs, groups). Check your mapping offline:
+
+   ```sh
+   docker run --rm -v "$PWD:/w:ro" ghcr.io/kc9wwh/symbiont check-mapping \
+     --file /w/symbiont.yaml --claims /w/sample-claims.json
+   ```
+
+4. **Register the callback** `https://<bridge>/oidc/callback` at your IdP
+   ([Pocket ID setup](#pocket-id-setup)).
+
+5. **Start** and watch the logs; symbiont refuses to start with a clear
+   list of problems if anything is misconfigured.
+
+   ```sh
+   docker compose up -d && docker compose logs -f symbiont
+   ```
+
+   Startup logs `oidc_redirect_uri` and `metadata_url`; there should be no
+   `WARN` lines (a placeholder-domain warning means `symbiont.yaml` still
+   has example values).
+
+6. **Point Fleet at** `https://<bridge>/metadata` ([Fleet
+   setup](#fleet-setup)) and sign in. Keep a non-SSO break-glass admin.
+
+## Configuration
+
+All settings are environment variables. Variables marked † also accept a
+`<NAME>_FILE` variant holding the value in a file (setting both is an
+error). Invalid configuration stops startup with every problem listed.
+
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `SYMBIONT_BASE_URL` | yes | | Public URL, no path. `https` (plain `http` only for localhost). Users must reach the bridge only at this hostname. |
+| `SYMBIONT_LISTEN_ADDR` | no | `:8080` | |
+| `SYMBIONT_SP_CONFIG_FILE` | yes | | Service provider YAML ([example](examples/symbiont.yaml)). |
+| `SYMBIONT_TRUSTED_PROXIES` | no | (none) | Comma-separated CIDRs/IPs. See [Client IPs behind a proxy](#client-ips-behind-a-proxy). |
+| `OIDC_ISSUER` | yes | | Must equal the discovery document's `issuer` exactly (trailing slash matters). Discovery runs at startup. |
+| `OIDC_CLIENT_ID` | yes | | |
+| `OIDC_CLIENT_SECRET` † | yes | | |
+| `OIDC_SCOPES` | no | `openid email profile groups` | Space-separated; must include `openid`. |
+| `OIDC_EMAIL_CLAIM` | no | `email` | |
+| `OIDC_NAME_CLAIM` | no | `name` | |
+| `OIDC_GROUPS_CLAIM` | no | `groups` | String array (or single string). |
+| `OIDC_FETCH_USERINFO` | no | `true` | Merge userinfo claims; ID token wins; userinfo `sub` must match. |
+| `OIDC_PROMPT` | no | (unset) | `login`, `consent`, `select_account`. `login` forces IdP re-auth. |
+| `OIDC_REQUIRE_EMAIL_VERIFIED` | no | `true` | |
+| `ALLOWED_EMAIL_DOMAINS` | no | (any) | Comma-separated; global gate before any per-SP policy. |
+| `SAML_CERT_FILE` | yes | | PEM certificate (`symbiont gencert`). |
+| `SAML_KEY_FILE` | yes | | PEM RSA key, ≥ 2048 bits, unencrypted. |
+| `SESSION_SECRET` † | yes | | Base64, ≥ 32 bytes decoded (`openssl rand -base64 32`). |
+| `SESSION_TTL` | no | `60s` | Bridge session only. |
+| `PENDING_REQUEST_TTL` | no | `10m` | Max time for an upstream login. |
+| `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, `error`. JSON logs on stdout. |
+
+Endpoints: `GET /metadata`, `GET|POST /sso`, `GET /login/{sp_id}`,
+`GET /oidc/callback`, `GET /healthz`.
+
+Subcommands: `symbiont gencert`, `symbiont check-mapping`,
+`symbiont version`.
+
+## Deployment
+
+The image is `ghcr.io/kc9wwh/symbiont` (linux/amd64 and linux/arm64),
+built from `gcr.io/distroless/static`: no shell, runs as uid/gid 65532,
+works with a read-only root filesystem and all capabilities dropped (see
+[`docker-compose.example.yml`](docker-compose.example.yml)). It serves
+plain HTTP on 8080; terminate TLS in front of it.
+
+**Health checks:** the image has no shell or curl, so a Docker
+`HEALTHCHECK` cannot run inside it. Use your orchestrator's HTTP probe
+against `GET /healthz` (returns `200 {"status":"ok"}`, makes no upstream
+calls), e.g. a Kubernetes `livenessProbe.httpGet` on port 8080, or your
+reverse proxy's / uptime monitor's health check.
+
+### Cloudflare Tunnel
+
+- Route the public hostname to the container over **plain HTTP**
+  (`http://symbiont:8080` from a `cloudflared` sidecar on the same network;
+  a commented example is in the compose file). Set `SYMBIONT_BASE_URL` to
+  the public `https://` hostname.
+- On the bridge hostname, **disable Rocket Loader and Email Obfuscation**
+  (e.g. with a Configuration Rule). Both rewrite HTML: Rocket Loader
+  replaces the auto-submit script, which the page's Content-Security-Policy
+  then blocks, and Email Obfuscation can alter form contents. Users would
+  be stuck on a "Continue" button or the login would fail.
+- **Do not put Cloudflare Access in front of `/metadata`**: Fleet fetches
+  it server-side and cannot authenticate. If you protect the hostname with
+  Access, add a bypass for `/metadata` and `/healthz` at minimum;
+  `/sso`, `/login/*` and `/oidc/callback` must also be reachable by
+  browsers without an extra interactive Access login.
+- Set `SYMBIONT_TRUSTED_PROXIES` to the network `cloudflared` connects
+  from to log real client IPs.
+
+### Client IPs behind a proxy
+
+`remote_addr` in logs is always the TCP peer (behind a tunnel, that is the
+tunnel). With `SYMBIONT_TRUSTED_PROXIES` set, requests whose peer falls in
+one of those ranges also log `client_ip`: the value of `CF-Connecting-IP`
+if present and valid, otherwise the right-most `X-Forwarded-For` entry that
+is not itself a trusted proxy. Requests from any other peer never use these
+headers, since a client could set them to anything. Ranges larger than /8
+(IPv4) or /16 (IPv6) produce a startup warning. `client_ip` is logging
+only; it is never used for decisions.
 
 ## Sessions and re-authentication
 
@@ -193,20 +339,92 @@ clock-skew allowance) and on the SP rejecting reuse of an assertion ID.
 Fleet does track consumed assertion IDs; other SPs may not. Only enable
 `idp_initiated` where you need it.
 
-## TODO
+### Offboarding
 
-Phase 5 (packaging + docs):
+symbiont only decides whether to issue the **next** assertion. A denial at
+the bridge (user removed from the IdP, from an allowed group, or blocked by
+`ALLOWED_EMAIL_DOMAINS`) stops new SSO logins, but it **does not change an
+existing Fleet account's role, and does not end that user's existing Fleet
+sessions**. Fleet only updates roles when it receives an assertion, and the
+bridge sends none to a denied user. To offboard, disable or delete the user
+in Fleet (UI, API, or SCIM provisioning from your directory), and remove
+them at the IdP.
 
-- [ ] Dockerfile (distroless, non-root), `docker-compose.example.yml`,
-  `.env.example`, CI (vet, race tests, image build).
-- [ ] CI: pin golangci-lint to a Go 1.27-compatible release (v2.14.0 or
-  later; v2.11.x built with Go 1.26 cannot read Go 1.27 export data).
-- [ ] `SYMBIONT_TRUSTED_PROXIES` (CIDR list). When the socket peer is
-  trusted, log the real client IP as `client_ip`, from `CF-Connecting-IP` or
-  the right-most untrusted `X-Forwarded-For` hop; never trust these headers
-  otherwise. `remote_addr` stays the socket peer.
-- [ ] Full README: quick start, configuration reference, troubleshooting,
-  manual verification checklist.
+### Other notes
+
+- Assertions and responses are both signed (RSA-SHA256). NameID is the
+  email (`emailAddress` format); the audience is only the requesting SP.
+- The bridge session cookie carries only a signed random ID; identity is
+  kept in memory, never authorization decisions. Restarting the container
+  ends all bridge sessions (users sign in at the IdP again).
+- Logs never contain tokens, codes, cookies, assertions, secrets, claim
+  sets or role values; they contain email, `sp_id`, outcome and error
+  category.
+- Requests to `/sso` are limited to 64 KB (including after decompression);
+  RelayState is opaque, at most 80 bytes, and never used as a redirect.
+
+## Limitations
+
+- Single instance: sessions and pending logins are in memory (bounded to
+  10,000 each). Running replicas requires sticky sessions and still loses
+  state on restart.
+- No SAML Single Logout, no encrypted assertions, no signed AuthnRequest
+  verification (requests are bound to configured SPs and ACS URLs instead).
+- HTTP-POST is the only response binding; AuthnRequests may use
+  HTTP-Redirect or HTTP-POST.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| Startup: `OIDC_ISSUER is "…" but the provider reports issuer "…"` | `OIDC_ISSUER` must match the provider's `issuer` exactly, including any trailing slash. |
+| Startup: `placeholder domain` WARN | `SYMBIONT_SP_CONFIG_FILE` still points at, or was copied unchanged from, an example file. |
+| Fleet: "invalid audience" / entity ID errors | Fleet `entity_id` must equal the SP's `entity_id` in `symbiont.yaml` exactly. Admin SSO and end-user auth are separate SPs. |
+| Bridge page "address that is not configured" | Fleet's ACS URL (from its server URL) is not listed in `acs_urls`. Check Fleet's server URL and the exact path. |
+| IdP error "redirect URI mismatch" | Register exactly the `oidc_redirect_uri` from the startup log. |
+| "Sign-in failed" page; `"error_category":"state_cookie_mismatch"` in logs | The login started on a different hostname than `SYMBIONT_BASE_URL` (cookies are host-only), or the browser blocks cookies. The log includes a hint when hosts differ. |
+| Stuck on a "Continue" button | JavaScript blocked or rewritten. Disable Cloudflare Rocket Loader on the bridge hostname. |
+| "Your account has no email address" / "not been verified" | Check `email` scope and claim; Pocket ID users need verified emails, or set `OIDC_REQUIRE_EMAIL_VERIFIED=false` with `ALLOWED_EMAIL_DOMAINS`. |
+| 403 "You don't have access to …" | Expected when the user's groups don't match the SP's `access`. Check the `groups` claim (`check-mapping`, `LOG_LEVEL=debug`) and that the `groups` scope is requested. |
+| "conflicting Fleet roles" | The user matched both a GLOBAL and a fleet-level rule. Fix group membership or rules. |
+| IdP-initiated login (dashboard tile) rejected by Fleet | Enable `enable_sso_idp_login` ("Allow SSO login initiated by identity provider"). |
+| Fleet rejects responses as expired / not yet valid | Clock skew. Assertions are valid 90 s with 180 s skew allowance; run NTP on both hosts. |
+| Role didn't change after a group change | Fleet only changes roles when role attributes are sent, and only with JIT provisioning (Premium). Without a `default`, users who match no rule keep their role. |
+
+## Manual verification checklist
+
+Run against a real Fleet Premium instance and IdP after deploying:
+
+1. SP-initiated: Fleet login → IdP (passkey) → lands in Fleet as the right user.
+2. IdP-initiated: `/login/fleet-admin` (or the IdP dashboard tile) → lands in Fleet.
+3. JIT: a new user in `fleet-admins` is created as global admin; moving
+   them to `fleet-observers` demotes them on next login.
+4. Fleet-level role: a user in a fleet-level group gets that role on that fleet only.
+5. Conflict: a user in both global and fleet-level groups sees the bridge's
+   conflict error.
+6. Logout: after Fleet logout, the next login re-prompts at the IdP when
+   `OIDC_PROMPT=login` (or the IdP's re-authentication setting) is on.
+7. (Optional) MDM end-user authentication during ADE on a test Mac.
+8. An employee-only user completes ADE end-user auth but gets the bridge's
+   403 page at Fleet admin login.
+9. An admin can do both; the Fleet admin role matches the mapping, and the
+   enrollment login causes no role change.
+10. With JIT on, an IdP user in no allowed group is not created in Fleet.
+11. Logs show `client_ip` (when `SYMBIONT_TRUSTED_PROXIES` is set) and no
+    secrets, codes or assertions.
+
+## Development
+
+```sh
+go vet ./... && go test -race ./...
+golangci-lint run          # v2.14.0+ (built with Go 1.27)
+docker build -t symbiont --build-arg VERSION=dev .
+```
+
+CI (`.github/workflows/ci.yml`) runs tidy/gofmt checks, vet, race tests and
+golangci-lint, builds the multi-arch image on every push and PR, and
+publishes to `ghcr.io/kc9wwh/symbiont` on `v*` tags (`X.Y.Z`, `X.Y`, `X`
+for X ≥ 1, plus a short-SHA tag).
 
 ## License
 

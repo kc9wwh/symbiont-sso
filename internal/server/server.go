@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/kc9wwh/symbiont-sso/internal/clientip"
 	"github.com/kc9wwh/symbiont-sso/internal/idp"
 )
 
@@ -37,6 +38,9 @@ type Options struct {
 	// Login is set. If both are nil, /sso validates requests but answers
 	// 503. Tests use fixed identities here.
 	Sessions Sessions
+	// ClientIP resolves the real client IP for logs when behind trusted
+	// proxies. Nil logs only the socket peer.
+	ClientIP *clientip.Resolver
 
 	ReadHeaderTimeout time.Duration
 	ReadTimeout       time.Duration

@@ -47,7 +47,7 @@ func (s *Server) handleSSO(w http.ResponseWriter, r *http.Request) {
 	if tok := r.PostFormValue(replayField); tok != "" && s.opts.Login != nil {
 		t, ok := verifyReplay(s.opts.Login.Signer, tok, xmlBuf, s.opts.Login.now())
 		if !ok {
-			s.log.WarnContext(r.Context(), "invalid replay token", "flow", "sp", "error_category", "replay_token_invalid")
+			s.reqLog(r).WarnContext(r.Context(), "invalid replay token", "flow", "sp", "error_category", "replay_token_invalid")
 			s.errorPage(w, r, http.StatusBadRequest, "Sign-in request rejected",
 				"This sign-in link has expired. Please return to the application and sign in again.")
 			return
@@ -60,7 +60,7 @@ func (s *Server) handleSSO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Replayed = replayed
-	log := s.log.With("flow", "sp", "sp_id", req.SP.ID, "sp_entity_id", req.SP.EntityID)
+	log := s.reqLog(r, "flow", "sp", "sp_id", req.SP.ID, "sp_entity_id", req.SP.EntityID)
 
 	if s.opts.Sessions == nil {
 		log.ErrorContext(r.Context(), "sso request valid but no session backend is configured")
@@ -89,7 +89,7 @@ func (s *Server) rejectSSO(w http.ResponseWriter, r *http.Request, err error) {
 			attrs = append(attrs, "sp_id", sp.ID)
 		}
 	}
-	s.log.WarnContext(r.Context(), "sso request rejected", attrs...)
+	s.reqLog(r).WarnContext(r.Context(), "sso request rejected", attrs...)
 
 	status, msg := http.StatusBadRequest, "The sign-in request from the application was invalid."
 	switch re.Category {

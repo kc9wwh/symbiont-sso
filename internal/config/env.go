@@ -7,6 +7,7 @@ const (
 	EnvBaseURL             = "SYMBIONT_BASE_URL"
 	EnvListenAddr          = "SYMBIONT_LISTEN_ADDR"
 	EnvSPConfigFile        = "SYMBIONT_SP_CONFIG_FILE"
+	EnvTrustedProxies      = "SYMBIONT_TRUSTED_PROXIES"
 	EnvOIDCIssuer          = "OIDC_ISSUER"
 	EnvOIDCClientID        = "OIDC_CLIENT_ID"
 	EnvOIDCClientSecret    = "OIDC_CLIENT_SECRET"

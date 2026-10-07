@@ -45,7 +45,15 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 		start := time.Now()
 		id := newRequestID()
 		w.Header().Set(RequestIDHeader, id)
-		r = r.WithContext(context.WithValue(r.Context(), requestIDKey{}, id))
+		ctx := context.WithValue(r.Context(), requestIDKey{}, id)
+		ip, fromHeader := "", false
+		if s.opts.ClientIP.Enabled() {
+			ip, fromHeader = s.opts.ClientIP.ClientIP(r)
+			if fromHeader {
+				ctx = context.WithValue(ctx, clientIPKey{}, ip)
+			}
+		}
+		r = r.WithContext(ctx)
 		rec := &statusRecorder{ResponseWriter: w}
 
 		next.ServeHTTP(rec, r)
@@ -57,15 +65,19 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 		case rec.status() >= 500:
 			level = slog.LevelError
 		}
-		s.log.LogAttrs(r.Context(), level, "http request",
+		attrs := []slog.Attr{
 			slog.String("request_id", id),
 			slog.String("method", r.Method),
 			slog.String("path", r.URL.Path),
 			slog.Int("status", rec.status()),
 			slog.Int64("bytes", rec.bytes),
 			slog.Duration("duration", time.Since(start)),
-			slog.String("remote_addr", r.RemoteAddr),
-		)
+			slog.String("remote_addr", r.RemoteAddr), // always the socket peer
+		}
+		if fromHeader {
+			attrs = append(attrs, slog.String("client_ip", ip))
+		}
+		s.log.LogAttrs(r.Context(), level, "http request", attrs...)
 	})
 }
 
@@ -95,6 +107,18 @@ func (s *Server) recoverPanics(next http.Handler) http.Handler {
 }
 
 type requestIDKey struct{}
+
+type clientIPKey struct{}
+
+// reqLog returns the server logger with attrs plus, when the request came
+// through a trusted proxy that supplied it, client_ip. All auth-event
+// logging goes through it.
+func (s *Server) reqLog(r *http.Request, attrs ...any) *slog.Logger {
+	if ip, ok := r.Context().Value(clientIPKey{}).(string); ok {
+		attrs = append(attrs, "client_ip", ip)
+	}
+	return s.log.With(attrs...)
+}
 
 // RequestID returns the request correlation ID set by the access-log
 // middleware, or "".

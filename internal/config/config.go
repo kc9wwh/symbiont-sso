@@ -11,6 +11,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -33,6 +34,9 @@ type Config struct {
 	SPConfigFile string
 	// AllowedEmailDomains is a lower-cased allowlist; empty means any domain.
 	AllowedEmailDomains []string
+	// TrustedProxies are peers whose CF-Connecting-IP / X-Forwarded-For
+	// headers are believed for logging the client IP. Empty: never.
+	TrustedProxies []netip.Prefix
 
 	OIDC    OIDCConfig
 	SAML    SAMLConfig
@@ -100,6 +104,7 @@ func Load(lookup LookupFunc) (*Config, error) {
 	cfg.ListenAddr = l.str(EnvListenAddr, DefaultListenAddr)
 	cfg.SPConfigFile = l.readableFile(EnvSPConfigFile)
 	cfg.AllowedEmailDomains = l.domains(EnvAllowedEmailDomains)
+	cfg.TrustedProxies = l.trustedProxies(EnvTrustedProxies)
 
 	cfg.OIDC = OIDCConfig{
 		Issuer:               l.issuer(EnvOIDCIssuer),

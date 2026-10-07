@@ -37,7 +37,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	state := q.Get("state")
 	if state == "" || len(state) > maxStateLen {
-		s.callbackFail(w, r, s.log, catMissingParams, nil, http.StatusBadRequest)
+		s.callbackFail(w, r, s.reqLog(r), catMissingParams, nil, http.StatusBadRequest)
 		return
 	}
 	stateCookie := l.Cookies.StateName(state)
@@ -45,7 +45,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	if !s.stateBoundToBrowser(r, stateCookie, state) {
 		// Leave the pending entry alone: a forged callback must not be able
 		// to cancel the real user's login.
-		log := s.log
+		log := s.reqLog(r)
 		if want := s.publicHost(); want != "" && !strings.EqualFold(r.Host, want) {
 			// Cookies are host-only: a login started on another hostname
 			// cannot complete here. Common misconfiguration; say so.
@@ -59,10 +59,10 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	// IdP errors) makes it single-use.
 	p, err := l.Pending.Take(r.Context(), state)
 	if err != nil {
-		s.callbackFail(w, r, s.log, catStateUnknown, nil, http.StatusBadRequest)
+		s.callbackFail(w, r, s.reqLog(r), catStateUnknown, nil, http.StatusBadRequest)
 		return
 	}
-	log := s.log.With("flow", string(p.Kind), "sp_id", p.SPID)
+	log := s.reqLog(r, "flow", string(p.Kind), "sp_id", p.SPID)
 
 	if e := q.Get("error"); e != "" {
 		log.WarnContext(r.Context(), "identity provider returned an error",

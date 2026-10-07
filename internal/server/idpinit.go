@@ -39,11 +39,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	sp, ok := s.opts.IdP.SPs().ByID(spID)
 	if !ok || !sp.IDPInitiatedEnabled {
 		// Same response for unknown and disabled: no hint which.
-		s.log.DebugContext(r.Context(), "idp-initiated login not available", "flow", "idp", "requested_sp_id", truncate(spID, 64))
+		s.reqLog(r).DebugContext(r.Context(), "idp-initiated login not available", "flow", "idp", "requested_sp_id", truncate(spID, 64))
 		s.errorPage(w, r, http.StatusNotFound, "Not found", "There is no sign-in link here.")
 		return
 	}
-	log := s.log.With("flow", "idp", "sp_id", sp.ID, "sp_entity_id", sp.EntityID)
+	log := s.reqLog(r, "flow", "idp", "sp_id", sp.ID, "sp_entity_id", sp.EntityID)
 
 	req, err := s.opts.IdP.IdPInitiated(r, sp, r.URL.Query().Get("RelayState"))
 	if err != nil {

@@ -98,7 +98,7 @@ func (o oidcSessions) Identity(w http.ResponseWriter, r *http.Request, req *idp.
 	if req.IDPInitiated {
 		kind = session.KindIDP
 	}
-	log := s.log.With("flow", string(kind), "sp_id", req.SP.ID)
+	log := s.reqLog(r, "flow", string(kind), "sp_id", req.SP.ID)
 	sess, reason := s.currentSession(r)
 	if sess != nil {
 		return identityFromSession(sess)
@@ -132,7 +132,7 @@ func (s *Server) startLogin(w http.ResponseWriter, r *http.Request, p session.Pe
 	state, nonce, verifier := session.NewID(), session.NewID(), oidcrp.NewVerifier()
 	now := l.now()
 	p.PKCEVerifier, p.Nonce, p.CreatedAt = verifier, nonce, now
-	log := s.log.With("flow", string(p.Kind), "sp_id", p.SPID)
+	log := s.reqLog(r, "flow", string(p.Kind), "sp_id", p.SPID)
 
 	if err := l.Pending.Put(r.Context(), state, p); err != nil {
 		log.ErrorContext(r.Context(), "store pending login", "error", err)

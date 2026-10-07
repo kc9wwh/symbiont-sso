@@ -10,12 +10,14 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"os/signal"
 	"runtime/debug"
 	"syscall"
 	"time"
 
+	"github.com/kc9wwh/symbiont-sso/internal/clientip"
 	"github.com/kc9wwh/symbiont-sso/internal/config"
 	"github.com/kc9wwh/symbiont-sso/internal/idp"
 	"github.com/kc9wwh/symbiont-sso/internal/oidcrp"
@@ -217,10 +219,12 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger, p *idp.
 		"oidc_issuer", cfg.OIDC.Issuer,
 		"oidc_redirect_uri", cfg.CallbackURL(),
 		"session_ttl", cfg.Session.TTL.String(),
+		"trusted_proxies", prefixStrings(cfg.TrustedProxies),
 	)
 	srv := server.New(server.Options{
-		Logger: logger,
-		IdP:    p,
+		Logger:   logger,
+		IdP:      p,
+		ClientIP: clientip.New(cfg.TrustedProxies),
 		Login: &server.Login{
 			OIDC:     oc,
 			Pending:  pending,
@@ -239,6 +243,14 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger, p *idp.
 		},
 	})
 	return srv.Run(ctx, ln)
+}
+
+func prefixStrings(ps []netip.Prefix) []string {
+	out := make([]string, len(ps))
+	for i, p := range ps {
+		out[i] = p.String()
+	}
+	return out
 }
 
 func newLogger(w io.Writer, level slog.Leveler) *slog.Logger {
