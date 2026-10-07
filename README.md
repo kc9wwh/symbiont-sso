@@ -138,6 +138,12 @@ metadata_url: https://saml.example.com/metadata
 
 Keep a non-SSO break-glass admin account.
 
+The shipped examples use reserved example domains (RFC 2606:
+`example.com`, `example.net`, `example.org`, `*.example`). symbiont logs a
+startup WARN for any service provider whose `entity_id` or ACS URL host is
+under one of them, to catch `SYMBIONT_SP_CONFIG_FILE` pointing at an
+example file by mistake.
+
 ### IdP-initiated login (`/login/{sp_id}`)
 
 With `idp_initiated.enabled: true` on an SP (off by default),

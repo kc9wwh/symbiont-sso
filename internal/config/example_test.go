@@ -3,12 +3,14 @@ package config
 import (
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
 
-// TestShippedExampleIsValid keeps examples/symbiont.yaml loadable and
-// warning-free.
+// TestShippedExampleIsValid keeps examples/symbiont.yaml loadable. Its only
+// warnings are the deliberate placeholder-domain ones (one per SP), which
+// catch deployments that point at the example file by mistake.
 func TestShippedExampleIsValid(t *testing.T) {
 	_, file, _, _ := runtime.Caller(0)
 	path := filepath.Join(filepath.Dir(file), "..", "..", "examples", "symbiont.yaml")
@@ -16,8 +18,9 @@ func TestShippedExampleIsValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("examples/symbiont.yaml: %v", err)
 	}
-	if len(warnings) != 0 {
-		t.Errorf("unexpected warnings: %v", warnings)
+	want := []string{"service provider fleet-admin " + placeholderMsg, "service provider fleet-enduser " + placeholderMsg}
+	if !slices.Equal(warnings, want) {
+		t.Errorf("warnings = %q, want %q", warnings, want)
 	}
 	if len(sps) != 2 || sps[0].ID != "fleet-admin" || sps[1].ID != "fleet-enduser" {
 		t.Fatalf("unexpected SPs: %+v", sps)
@@ -37,8 +40,9 @@ func TestShippedMappingExampleIsValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("examples/mapping.fleet.yaml: %v", err)
 	}
-	if len(warnings) != 0 || len(sps) != 1 || len(sps[0].Attributes) != 2 {
-		t.Errorf("warnings=%v sps=%+v", warnings, sps)
+	if !slices.Equal(warnings, []string{"service provider fleet-admin " + placeholderMsg}) ||
+		len(sps) != 1 || len(sps[0].Attributes) != 2 {
+		t.Errorf("warnings=%q sps=%+v", warnings, sps)
 	}
 }
 
@@ -58,7 +62,7 @@ service_providers:
 	// A fleet-level default with GLOBAL rules (no GLOBAL default) is fine and
 	// produces no warning: defaults never cause conflicts.
 	_, warnings := parseSPs(t, strings.Replace(both, ", default: observer}\n      - {name: FLEET_JIT_USER_ROLE_FLEET_2", "}\n      - {name: FLEET_JIT_USER_ROLE_FLEET_2", 1))
-	if len(warnings) != 0 {
+	if warnings = otherWarnings(warnings); len(warnings) != 0 {
 		t.Errorf("warnings = %v", warnings)
 	}
 }
@@ -72,7 +76,7 @@ service_providers:
     idp_initiated: {enabled: true}
     access: {allow_groups: [employees]}
 `)
-	if len(warnings) != 1 || !strings.Contains(warnings[0],
+	if warnings = otherWarnings(warnings); len(warnings) != 1 || !strings.Contains(warnings[0],
 		"Fleet's MDM end-user authentication requires SP-initiated login; IdP-initiated responses to this ACS will be rejected") {
 		t.Errorf("warnings = %v", warnings)
 	}
@@ -88,7 +92,7 @@ service_providers:
     idp_initiated: {enabled: true, acs_url: https://fleet.example.com/api/v1/fleet/sso/callback}
     access: {allow_groups: [g]}
 `)
-	if len(warnings) != 0 {
+	if warnings = otherWarnings(warnings); len(warnings) != 0 {
 		t.Errorf("unexpected warnings: %v", warnings)
 	}
 }

@@ -187,9 +187,41 @@ func TestServeStartsAndStopsOnCancel(t *testing.T) {
 	if strings.Contains(out, "not enforced") {
 		t.Errorf("pre-release access warning still logged:\n%s", out)
 	}
-	// The only expected boot WARN is the plain-http base URL notice.
-	if n := strings.Count(out, `"level":"WARN"`); n != 1 || !strings.Contains(out, "plain http") {
-		t.Errorf("want exactly one WARN (plain http), got %d:\n%s", n, out)
+	// Expected boot WARNs: plain-http base URL, and the placeholder-domain
+	// notice (the fixture SP uses fleet.example.com).
+	placeholder := `"level":"WARN","msg":"service provider configuration warning","detail":"service provider fleet-admin ` +
+		`uses a placeholder domain; did you point SYMBIONT_SP_CONFIG_FILE at the example file?"`
+	if n := strings.Count(out, `"level":"WARN"`); n != 2 || !strings.Contains(out, "plain http") || !strings.Contains(out, placeholder) {
+		t.Errorf("want exactly the plain-http and placeholder-domain WARNs, got %d:\n%s", n, out)
+	}
+}
+
+// A real-looking SP file produces no placeholder warning at boot.
+func TestServeNoPlaceholderWarningForRealDomains(t *testing.T) {
+	env := validEnv(t, "127.0.0.1:0")
+	real := strings.ReplaceAll(validSPFile, "fleet.example.com", "fleet.acme-corp.io")
+	if err := os.WriteFile(env[config.EnvSPConfigFile], []byte(real), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+	logs := &lockedBuffer{}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan int, 1)
+	go func() { done <- run(ctx, nil, lookup, logs, logs) }()
+	// SP warnings are logged before the listener starts; wait for it.
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(logs.String(), `"msg":"http server listening"`) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	if code := <-done; code != exitOK {
+		t.Fatalf("exit = %d\n%s", code, logs.String())
+	}
+	if strings.Contains(logs.String(), "placeholder domain") {
+		t.Errorf("placeholder warning for real domain:\n%s", logs.String())
+	}
+	if !strings.Contains(logs.String(), `"msg":"service provider loaded"`) {
+		t.Errorf("SP file not loaded:\n%s", logs.String())
 	}
 }
 

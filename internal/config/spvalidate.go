@@ -95,6 +95,9 @@ func (v *spValidator) validate(f *spFile) []ServiceProvider {
 				"%s: idp_initiated is enabled for %q: Fleet's MDM end-user authentication requires SP-initiated login; "+
 					"IdP-initiated responses to this ACS will be rejected", where, sp.IDPInitiatedACSURL))
 		}
+		if sp.ID != "" && usesPlaceholderDomain(&sp) {
+			v.warnings = append(v.warnings, placeholderWarning(sp.ID))
+		}
 		if sp.Access.AllowAll && mapping.HasFleetRoleAttributes(e.Attributes, e.PassthroughPrefixes) {
 			v.warnings = append(v.warnings, fmt.Sprintf(
 				"%s: access.allow_all is true and Fleet role attributes are configured; every user who can sign in "+

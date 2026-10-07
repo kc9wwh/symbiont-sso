@@ -65,7 +65,7 @@ func spProblems(t *testing.T, y string) []string {
 
 func TestParseServiceProvidersAmendmentExample(t *testing.T) {
 	sps, warnings := parseSPs(t, amendmentExample)
-	if len(warnings) != 0 {
+	if warnings = otherWarnings(warnings); len(warnings) != 0 {
 		t.Errorf("unexpected warnings: %v", warnings)
 	}
 	if len(sps) != 2 {
@@ -131,14 +131,14 @@ service_providers:
     attributes:
       - {name: FLEET_JIT_USER_ROLE_GLOBAL, default: observer}
 `)
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "allow_all is true and Fleet role attributes") {
+	if warnings = otherWarnings(warnings); len(warnings) != 1 || !strings.Contains(warnings[0], "allow_all is true and Fleet role attributes") {
 		t.Errorf("warnings = %v", warnings)
 	}
 	_, warnings = parseSPs(t, `
 service_providers:
   - {id: x, entity_id: x, acs_urls: [https://x.example.com/acs], access: {allow_all: true}, passthrough_prefixes: [FLEET_]}
 `)
-	if len(warnings) != 1 {
+	if warnings = otherWarnings(warnings); len(warnings) != 1 {
 		t.Errorf("passthrough prefix covering Fleet roles should warn; got %v", warnings)
 	}
 }
