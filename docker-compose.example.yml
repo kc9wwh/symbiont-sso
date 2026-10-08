@@ -1,0 +1,73 @@
+# Example deployment. Copy to docker-compose.yml and adjust.
+#
+#   mkdir -p secrets
+#   docker run --rm -v "$PWD/secrets:/out" -u "$(id -u):$(id -g)" \
+#     ghcr.io/kc9wwh/symbiont gencert --cn saml.example.com \
+#     --out-cert /out/saml_cert.pem --out-key /out/saml_key.pem
+#   openssl rand -base64 32 > secrets/session_secret
+#   printf '%s' 'your-oidc-client-secret' > secrets/oidc_client_secret
+#   chmod 0444 secrets/*        # container runs as uid 65532; see README
+#   cp .env.example symbiont.env            # then edit
+#   cp examples/symbiont.yaml symbiont.yaml # then edit
+#   docker compose -f docker-compose.yml up -d
+
+name: symbiont
+
+services:
+  symbiont:
+    image: ghcr.io/kc9wwh/symbiont:latest
+    restart: unless-stopped
+    env_file: symbiont.env
+    environment:
+      SYMBIONT_SP_CONFIG_FILE: /etc/symbiont/symbiont.yaml
+      SAML_CERT_FILE: /run/secrets/saml_cert
+      SAML_KEY_FILE: /run/secrets/saml_key
+      SESSION_SECRET_FILE: /run/secrets/session_secret
+      OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
+    volumes:
+      - ./symbiont.yaml:/etc/symbiont/symbiont.yaml:ro
+    secrets:
+      - saml_cert
+      - saml_key
+      - session_secret
+      - oidc_client_secret
+    ports:
+      # Plain HTTP; TLS terminates at the tunnel or reverse proxy. Bind to
+      # localhost only, or drop this entirely when using the cloudflared
+      # sidecar below (it reaches symbiont over the compose network).
+      - "127.0.0.1:8080:8080"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [symbiont]
+    # No healthcheck: the distroless image has no shell or curl. Use your
+    # orchestrator / reverse proxy HTTP check against GET /healthz.
+
+  # Cloudflare Tunnel sidecar. In the Zero Trust dashboard, set the public
+  # hostname's service to http://symbiont:8080, then put the tunnel token in
+  # symbiont.env as TUNNEL_TOKEN=... (or a separate env file).
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   restart: unless-stopped
+  #   command: tunnel --no-autoupdate run
+  #   env_file: symbiont.env
+  #   networks: [symbiont]
+  #   depends_on: [symbiont]
+
+networks:
+  symbiont:
+    # A fixed subnet makes SYMBIONT_TRUSTED_PROXIES predictable, e.g.
+    # SYMBIONT_TRUSTED_PROXIES=172.30.80.0/24
+    ipam:
+      config:
+        - subnet: 172.30.80.0/24
+
+secrets:
+  saml_cert:
+    file: ./secrets/saml_cert.pem
+  saml_key:
+    file: ./secrets/saml_key.pem
+  session_secret:
+    file: ./secrets/session_secret
+  oidc_client_secret:
+    file: ./secrets/oidc_client_secret

@@ -1,0 +1,47 @@
+# symbiont service provider configuration (SYMBIONT_SP_CONFIG_FILE).
+#
+# Each entry is one SAML service provider. Access is denied by default:
+# every service provider needs an `access` block.
+
+service_providers:
+  # Fleet admin console SSO (Settings > Integrations > Single sign-on).
+  - id: fleet-admin                       # used in /login/fleet-admin and logs
+    display_name: Fleet
+    entity_id: fleet.example.com          # = Fleet sso_settings.entity_id
+    acs_urls:
+      - https://fleet.example.com/api/v1/fleet/sso/callback
+    idp_initiated:
+      # Enables https://saml.example.com/login/fleet-admin (e.g. a Pocket ID
+      # dashboard tile). Fleet must ALSO have
+      # org_settings.sso_settings.enable_sso_idp_login: true, otherwise it
+      # rejects unsolicited responses.
+      enabled: true
+      # acs_url defaults to the first entry in acs_urls.
+    access:
+      allow_groups: [fleet-admins, fleet-maintainers, fleet-observers]
+      # allow_emails: [break-glass@example.com]
+    fleet_role_validation: true
+    attributes:
+      # Fleet JIT role (Fleet Premium, enable_jit_provisioning: true).
+      # Rules are evaluated top-down; the first match wins.
+      - name: FLEET_JIT_USER_ROLE_GLOBAL
+        rules:
+          - group: fleet-admins
+            value: admin
+          - group: fleet-maintainers
+            value: maintainer
+        default: observer   # demotes users who leave the admin/maintainer groups
+
+  # Fleet MDM end-user authentication during Apple automated enrollment
+  # (Settings > Integrations > Single sign-on > End users).
+  - id: fleet-enduser
+    display_name: Fleet device enrollment
+    entity_id: fleet.example.com/mdm      # = Fleet mdm.end_user_authentication.entity_id
+    acs_urls:
+      - https://fleet.example.com/api/v1/fleet/mdm/sso/callback
+    idp_initiated:
+      enabled: false                      # Fleet's MDM flow is SP-initiated only
+    access:
+      allow_groups: [employees]
+    fleet_role_validation: false
+    attributes: []                        # email + name only; never send Fleet roles here

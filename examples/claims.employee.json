@@ -1,0 +1,7 @@
+{
+  "sub": "8f2c3a1e-0000-4000-8000-000000000002",
+  "email": "bob@example.com",
+  "email_verified": true,
+  "name": "Bob Employee",
+  "groups": ["employees"]
+}

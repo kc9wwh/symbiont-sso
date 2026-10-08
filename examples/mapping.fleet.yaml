@@ -1,0 +1,52 @@
+# Fleet mapping reference: global roles, a fleet-level role, and the
+# validation rules symbiont enforces for Fleet JIT role attributes.
+#
+# Try it without a live login:
+#   symbiont check-mapping --file examples/mapping.fleet.yaml --claims examples/claims.admin.json
+#
+# Fleet role values: admin, maintainer, observer, observer_plus, technician,
+# null. "gitops" is rejected (API-only users). Fleet IDs come from the Fleet
+# UI or `fleetctl get teams`.
+
+service_providers:
+  - id: fleet-admin
+    display_name: Fleet
+    entity_id: fleet.example.com
+    acs_urls:
+      - https://fleet.example.com/api/v1/fleet/sso/callback
+    idp_initiated:
+      enabled: true                      # Fleet also needs enable_sso_idp_login: true
+    access:
+      allow_groups: [fleet-admins, fleet-maintainers, fleet-observers, workstations-maint]
+      allow_emails: [break-glass@example.com]
+    fleet_role_validation: true
+
+    # Claims whose names start with a prefix are copied verbatim (scalar
+    # values only). Rule-based attributes below override them.
+    passthrough_prefixes: []
+
+    attributes:
+      # First matching rule wins. The default demotes users who leave every
+      # listed group; without a default, Fleet keeps the user's current role.
+      - name: FLEET_JIT_USER_ROLE_GLOBAL
+        rules:
+          - group: fleet-admins
+            value: admin
+          - group: fleet-maintainers
+            value: maintainer
+          - group: fleet-observers
+            value: observer
+        default: observer
+
+      # Fleet-level role for fleet (team) 2. A default is only applied when
+      # no rule for the other scope matched, so when this rule matches the
+      # GLOBAL default above is dropped. Defaults may be set on GLOBAL or on
+      # fleet-level roles, not both. A user matching BOTH a GLOBAL rule and a
+      # fleet-level rule is rejected, because Fleet cannot hold both.
+      - name: FLEET_JIT_USER_ROLE_FLEET_2
+        rules:
+          - group: workstations-maint
+            value: maintainer
+          # Claim rules match a scalar claim or membership in an array claim:
+          # - claim: {name: department, equals: it}
+          #   value: observer
