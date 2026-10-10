@@ -140,6 +140,9 @@ func (o oidcSessions) Identity(w http.ResponseWriter, r *http.Request, req *idp.
 	return nil
 }
 
+// catPendingFull is logged when the pending-login store refuses a new login.
+const catPendingFull = "pending_store_full"
+
 // startLogin records a pending login, binds its state to this browser with
 // a signed cookie, and redirects to the identity provider.
 func (s *Server) startLogin(w http.ResponseWriter, r *http.Request, p session.Pending) {
@@ -150,7 +153,13 @@ func (s *Server) startLogin(w http.ResponseWriter, r *http.Request, p session.Pe
 	log := s.reqLog(r, "flow", string(p.Kind), "sp_id", p.SPID)
 
 	if err := l.Pending.Put(r.Context(), state, p); err != nil {
-		log.ErrorContext(r.Context(), "store pending login", "error", err)
+		if errors.Is(err, session.ErrStoreFull) {
+			// Load (or a flood), not a fault: one line per rejected
+			// request must not page anyone.
+			log.WarnContext(r.Context(), "pending login store full", "error_category", catPendingFull)
+		} else {
+			log.ErrorContext(r.Context(), "store pending login", "error", err)
+		}
 		s.errorPage(w, r, http.StatusServiceUnavailable, "Sign-in unavailable",
 			"Sign-in is temporarily unavailable. Please try again.")
 		return
