@@ -87,6 +87,6 @@ func (s *Server) issue(w http.ResponseWriter, r *http.Request, log *slog.Logger,
 		log.ErrorContext(r.Context(), "write saml response page", "error", err)
 		return
 	}
-	log.InfoContext(r.Context(), "sso success", "email", id.Email, "acs_url", form.Action,
+	log.InfoContext(r.Context(), "sso success", "sub", id.Subject, "acs_url", form.Action,
 		"fleet_role_attributes", mapping.RoleAttributeNames(dec.Mapping.Attributes))
 }

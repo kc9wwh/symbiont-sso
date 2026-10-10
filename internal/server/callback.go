@@ -101,7 +101,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	token := l.Signer.Sign(session.PurposeSession, sess.ID, sess.ExpiresAt)
 	l.Cookies.Set(w, l.Cookies.SessionName(), token, now, sess.ExpiresAt)
-	log.InfoContext(r.Context(), "upstream login succeeded", "email", sess.Email)
+	log.InfoContext(r.Context(), "upstream login succeeded", "sub", sess.Subject)
 
 	s.resume(w, r, log, p)
 }
