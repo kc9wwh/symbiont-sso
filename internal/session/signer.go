@@ -64,7 +64,7 @@ func (s *Signer) mac(purpose string, payload []byte) []byte {
 func (s *Signer) Sign(purpose, value string, expires time.Time) string {
 	payload := make([]byte, headerLen, headerLen+len(value))
 	payload[0] = tokenVersion
-	binary.BigEndian.PutUint64(payload[1:headerLen], uint64(expires.Unix()))
+	binary.BigEndian.PutUint64(payload[1:headerLen], uint64(expires.Unix())) //nolint:gosec // G115: bit-preserving round trip with Verify's int64 cast
 	payload = append(payload, value...)
 	enc := base64.RawURLEncoding
 	return enc.EncodeToString(payload) + "." + enc.EncodeToString(s.mac(purpose, payload))
@@ -92,7 +92,7 @@ func (s *Signer) Verify(purpose, token string, now time.Time) (string, error) {
 	if payload[0] != tokenVersion {
 		return "", ErrInvalidToken
 	}
-	exp := int64(binary.BigEndian.Uint64(payload[1:headerLen]))
+	exp := int64(binary.BigEndian.Uint64(payload[1:headerLen])) //nolint:gosec // G115: inverse of Sign's cast; payload is HMAC-verified above
 	if now.Unix() >= exp {
 		return "", ErrExpiredToken
 	}

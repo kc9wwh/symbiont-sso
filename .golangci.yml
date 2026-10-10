@@ -1,0 +1,50 @@
+version: "2"
+
+# Run locally with: golangci-lint run  (v2.14.0+, built with Go >= 1.27)
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errorlint
+    - forcetypeassert
+    - gocritic
+    - gosec
+    - misspell
+    - noctx
+    - nolintlint
+    - revive
+    - unparam
+    - usestdlibvars
+    # contextcheck was evaluated and left out: every finding was a false
+    # positive on the r.WithContext middleware pattern.
+
+  settings:
+    nolintlint:
+      # Every //nolint must name the linter and say why.
+      require-specific: true
+      require-explanation: true
+      allow-unused: false
+
+  exclusions:
+    generated: strict
+    rules:
+      # Tests: plain http.Get without body/ctx handling, fixed file paths
+      # from t.TempDir, undersized keys for negative cases, exact error
+      # comparisons and unchecked assertions are deliberate. oidctest is a
+      # test-only helper package (never built into the binary).
+      - path: (_test\.go|internal/oidcrp/oidctest/)
+        linters:
+          - bodyclose
+          - errorlint
+          - forcetypeassert
+          - gosec
+          - noctx
+          - unparam
+      - path: _test\.go
+        linters: [revive]
+        text: "^unused-parameter:"
+      # "IdP" is the standard SAML spelling (Identity Provider); revive's
+      # initialism rule would rename it to "IDP" across the codebase.
+      - linters: [revive]
+        text: "^var-naming: .*IdP"

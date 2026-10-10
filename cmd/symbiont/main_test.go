@@ -199,8 +199,8 @@ func TestServeStartsAndStopsOnCancel(t *testing.T) {
 // A real-looking SP file produces no placeholder warning at boot.
 func TestServeNoPlaceholderWarningForRealDomains(t *testing.T) {
 	env := validEnv(t, "127.0.0.1:0")
-	real := strings.ReplaceAll(validSPFile, "fleet.example.com", "fleet.acme-corp.io")
-	if err := os.WriteFile(env[config.EnvSPConfigFile], []byte(real), 0o600); err != nil {
+	realSPs := strings.ReplaceAll(validSPFile, "fleet.example.com", "fleet.acme-corp.io")
+	if err := os.WriteFile(env[config.EnvSPConfigFile], []byte(realSPs), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }

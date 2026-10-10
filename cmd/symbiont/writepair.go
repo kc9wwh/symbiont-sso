@@ -57,7 +57,7 @@ func createKeyPair(keyPath string, keyPEM []byte, certPath string, certPEM []byt
 }
 
 func createExclusive(path string, data []byte, mode os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode) //nolint:gosec // G304: operator-supplied CLI output path; O_EXCL refuses to overwrite
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func syncDir(dir string) error {
 	if runtime.GOOS == "windows" {
 		return nil
 	}
-	d, err := os.Open(dir)
+	d, err := os.Open(dir) //nolint:gosec // G304: parent dir of an operator-supplied output path, opened only to fsync
 	if err != nil {
 		return fmt.Errorf("sync directory: %w", err)
 	}

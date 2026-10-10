@@ -30,6 +30,12 @@ type memEntry[V any] struct {
 	expires time.Time
 }
 
+// entryOf returns el's entry. order holds only *memEntry[V] values (every
+// PushBack is in this file), so the assertion cannot fail.
+func entryOf[V any](el *list.Element) *memEntry[V] {
+	return el.Value.(*memEntry[V]) //nolint:forcetypeassert // invariant: order only holds *memEntry[V]
+}
+
 func newMemStore[V any](maxEntries int, now func() time.Time) *memStore[V] {
 	if maxEntries <= 0 {
 		maxEntries = DefaultMaxEntries
@@ -51,7 +57,7 @@ func (s *memStore[V]) put(key string, v V, expires time.Time) (evicted int) {
 	for s.order.Len() >= s.max {
 		front := s.order.Front()
 		s.order.Remove(front)
-		delete(s.items, front.Value.(*memEntry[V]).key)
+		delete(s.items, entryOf[V](front).key)
 		evicted++
 	}
 	s.items[key] = s.order.PushBack(&memEntry[V]{key: key, val: v, expires: expires})
@@ -86,7 +92,7 @@ func (s *memStore[V]) lookup(key string, remove bool) (V, bool) {
 	if !ok {
 		return zero, false
 	}
-	e := el.Value.(*memEntry[V])
+	e := entryOf[V](el)
 	expired := !s.now().Before(e.expires)
 	if remove || expired {
 		s.order.Remove(el)
@@ -122,7 +128,7 @@ func (s *memStore[V]) purgeExpiredLocked() int {
 	n := 0
 	for el := s.order.Front(); el != nil; {
 		next := el.Next()
-		if e := el.Value.(*memEntry[V]); !now.Before(e.expires) {
+		if e := entryOf[V](el); !now.Before(e.expires) {
 			s.order.Remove(el)
 			delete(s.items, e.key)
 			n++

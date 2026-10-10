@@ -45,7 +45,10 @@ func TestCheckMappingExamples(t *testing.T) {
 			t.Errorf("admin output missing %q:\n%s", want, out)
 		}
 	}
-	enduser := out[strings.Index(out, "[fleet-enduser]"):]
+	_, enduser, found := strings.Cut(out, "[fleet-enduser]")
+	if !found {
+		t.Fatalf("admin output missing [fleet-enduser]:\n%s", out)
+	}
 	if strings.Contains(enduser, "FLEET_JIT") {
 		t.Errorf("fleet-enduser shows role attributes:\n%s", enduser)
 	}

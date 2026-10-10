@@ -128,7 +128,8 @@ func runServe(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) i
 		return exitConfig
 	}
 
-	ln, err := net.Listen("tcp", cfg.ListenAddr)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", cfg.ListenAddr)
 	if err != nil {
 		logger.Error("cannot listen", "addr", cfg.ListenAddr, "error", err)
 		return exitError

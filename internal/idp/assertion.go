@@ -20,7 +20,7 @@ const (
 	AttrName                  = "name"
 	authnContextClassUnspec   = "urn:oasis:names:tc:SAML:2.0:ac:classes:unspecified"
 	nameIDFormatEntity        = "urn:oasis:names:tc:SAML:2.0:nameid-format:entity"
-	subjectConfirmationBearer = "urn:oasis:names:tc:SAML:2.0:cm:bearer"
+	subjectConfirmationBearer = "urn:oasis:names:tc:SAML:2.0:cm:bearer" //nolint:gosec // G101: SAML URN ("bearer"), not a credential
 )
 
 // Identity is the authenticated user an assertion is issued for. It carries

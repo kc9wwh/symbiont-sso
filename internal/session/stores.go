@@ -71,7 +71,7 @@ type Session struct {
 }
 
 // SessionStore holds bridge sessions by ID.
-type SessionStore interface {
+type SessionStore interface { //nolint:revive // exported: pairs with PendingStore; renaming is an API change
 	Create(ctx context.Context, s Session) error
 	Get(ctx context.Context, id string) (Session, error)
 	Delete(ctx context.Context, id string) error

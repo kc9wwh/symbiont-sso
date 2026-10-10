@@ -40,7 +40,7 @@ func WriteError(w http.ResponseWriter, p ErrorPage) {
 	if err := errorTmpl.Execute(&buf, struct {
 		ErrorPage
 		Style template.CSS
-	}{p, template.CSS(pageStyle)}); err != nil {
+	}{p, template.CSS(pageStyle)}); err != nil { //nolint:gosec // G203: pageStyle is a compile-time constant
 		http.Error(w, http.StatusText(p.Status), p.Status)
 		return
 	}

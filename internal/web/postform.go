@@ -61,7 +61,7 @@ func WritePostForm(w http.ResponseWriter, p PostFormPage) error {
 		PostFormPage
 		Script template.JS
 		Style  template.CSS
-	}{p, template.JS(autoSubmitScript), template.CSS(pageStyle)})
+	}{p, template.JS(autoSubmitScript), template.CSS(pageStyle)}) //nolint:gosec // G203: compile-time constants, no user input
 	if err != nil {
 		return err
 	}
