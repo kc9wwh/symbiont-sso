@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 const (
@@ -41,7 +42,7 @@ func writeKeyPair(keyPath string, keyPEM []byte, certPath string, certPEM []byte
 		_ = os.Remove(keyTmp)
 		return fmt.Errorf("write key: %w (the certificate was already replaced and no longer matches the old key; re-run with --force)", err)
 	}
-	return nil
+	return syncDirs(keyPath, certPath)
 }
 
 func createKeyPair(keyPath string, keyPEM []byte, certPath string, certPEM []byte) error {
@@ -52,7 +53,7 @@ func createKeyPair(keyPath string, keyPEM []byte, certPath string, certPEM []byt
 		_ = os.Remove(keyPath)
 		return fmt.Errorf("write certificate: %w", err)
 	}
-	return nil
+	return syncDirs(keyPath, certPath)
 }
 
 func createExclusive(path string, data []byte, mode os.FileMode) error {
@@ -65,11 +66,50 @@ func createExclusive(path string, data []byte, mode os.FileMode) error {
 		_ = os.Remove(path)
 		return err
 	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(path)
+		return err
+	}
 	if err := f.Close(); err != nil {
 		_ = os.Remove(path)
 		return err
 	}
 	return nil
+}
+
+// syncDirs makes the directory entries of the written files durable, so a
+// crash right after gencert reports success cannot lose the new names.
+func syncDirs(paths ...string) error {
+	seen := map[string]bool{}
+	for _, p := range paths {
+		d := filepath.Dir(p)
+		if seen[d] {
+			continue
+		}
+		seen[d] = true
+		if err := syncDir(d); err != nil {
+			return fmt.Errorf("files written but not durably recorded: %w", err)
+		}
+	}
+	return nil
+}
+
+// syncDir fsyncs a directory. Windows cannot sync directories, so it is a
+// no-op there.
+func syncDir(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return fmt.Errorf("sync directory: %w", err)
+	}
+	if err := d.Sync(); err != nil {
+		_ = d.Close()
+		return fmt.Errorf("sync directory: %w", err)
+	}
+	return d.Close()
 }
 
 // stageFile writes data to a fresh temp file in path's directory (created

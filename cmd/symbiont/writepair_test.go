@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -68,5 +69,17 @@ func TestWriteKeyPairWithoutForceRollsBackKey(t *testing.T) {
 	}
 	if _, err := os.Lstat(keyPath); !os.IsNotExist(err) {
 		t.Errorf("orphaned key left behind (lstat err = %v)", err)
+	}
+}
+
+func TestSyncDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directories cannot be synced on windows")
+	}
+	if err := syncDir(t.TempDir()); err != nil {
+		t.Errorf("syncDir(existing) = %v", err)
+	}
+	if err := syncDir(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Error("syncDir(missing) succeeded")
 	}
 }
