@@ -53,6 +53,14 @@ services:
   #   env_file: symbiont.env
   #   networks: [symbiont]
   #   depends_on: [symbiont]
+  #
+  # Behind the tunnel, also set in symbiont.env (see README, "Client IPs
+  # behind a proxy"), or every user shares one login rate-limit budget and
+  # logs show the tunnel's address:
+  #   SYMBIONT_TRUSTED_PROXIES=172.30.80.0/24    # the subnet below
+  #   SYMBIONT_TRUST_CF_CONNECTING_IP=true       # Cloudflare only
+  # SYMBIONT_RATE_LIMIT_PER_MINUTE (default 60, 0 disables) caps logins
+  # started per client.
 
 networks:
   symbiont:
