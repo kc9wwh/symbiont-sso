@@ -3,10 +3,14 @@ package server
 import (
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"sync"
 	"time"
 )
+
+// ipv6BucketBits is the IPv6 prefix length that counts as one client.
+const ipv6BucketBits = 64
 
 // maxLimiterKeys bounds the per-client table. Past it, idle entries are
 // purged and, if the table is still full, new clients are let through: the
@@ -109,10 +113,25 @@ func (s *Server) limited(h http.HandlerFunc) http.HandlerFunc {
 // trusted proxy supplied one, otherwise the socket peer.
 func (s *Server) limiterKey(r *http.Request) string {
 	if ip, ok := r.Context().Value(clientIPKey{}).(string); ok {
-		return ip
+		return clientBucket(ip)
 	}
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
+		return clientBucket(host)
 	}
 	return r.RemoteAddr
+}
+
+// clientBucket groups IPv6 clients by /64: one host routinely controls a
+// whole /64, and a key per address would let it mint unlimited buckets and
+// exhaust the client table.
+func clientBucket(ip string) string {
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	a = a.Unmap()
+	if a.Is4() {
+		return a.String()
+	}
+	return netip.PrefixFrom(a.WithZone(""), ipv6BucketBits).Masked().String()
 }

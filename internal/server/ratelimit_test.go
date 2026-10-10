@@ -95,6 +95,31 @@ func TestLimitedReturns429(t *testing.T) {
 	}
 }
 
+// One IPv6 host controls a whole /64, so it must not get a bucket per
+// address.
+func TestLimiterKeyGroupsIPv6By64(t *testing.T) {
+	s := New(Options{})
+	key := func(remote string) string {
+		r := httptest.NewRequest(http.MethodGet, "/sso", nil)
+		r.RemoteAddr = remote
+		return s.limiterKey(r)
+	}
+	tests := []struct {
+		a, b string
+		same bool
+	}{
+		{"[2001:db8:1:2::1]:1000", "[2001:db8:1:2:ffff::9]:2000", true},
+		{"[2001:db8:1:2::1]:1000", "[2001:db8:1:3::1]:1000", false},
+		{"192.0.2.1:1000", "192.0.2.2:1000", false},
+		{"[::ffff:192.0.2.1]:1000", "[::ffff:192.0.2.2]:1000", false},
+	}
+	for _, tc := range tests {
+		if got := key(tc.a) == key(tc.b); got != tc.same {
+			t.Errorf("same key for %s and %s = %v, want %v (%q, %q)", tc.a, tc.b, got, tc.same, key(tc.a), key(tc.b))
+		}
+	}
+}
+
 func TestLimitedPassThroughWhenDisabled(t *testing.T) {
 	s := New(Options{})
 	ran := false
