@@ -37,6 +37,9 @@ type Config struct {
 	// TrustedProxies are peers whose CF-Connecting-IP / X-Forwarded-For
 	// headers are believed for logging the client IP. Empty: never.
 	TrustedProxies []netip.Prefix
+	// TrustCFConnectingIP prefers CF-Connecting-IP from a trusted proxy.
+	// Set it only when the trusted proxies are Cloudflare.
+	TrustCFConnectingIP bool
 
 	OIDC    OIDCConfig
 	SAML    SAMLConfig
@@ -105,6 +108,7 @@ func Load(lookup LookupFunc) (*Config, error) {
 	cfg.SPConfigFile = l.readableFile(EnvSPConfigFile)
 	cfg.AllowedEmailDomains = l.domains(EnvAllowedEmailDomains)
 	cfg.TrustedProxies = l.trustedProxies(EnvTrustedProxies)
+	cfg.TrustCFConnectingIP = l.boolean(EnvTrustCFConnectingIP, false)
 
 	cfg.OIDC = OIDCConfig{
 		Issuer:               l.issuer(EnvOIDCIssuer),

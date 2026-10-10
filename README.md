@@ -92,6 +92,7 @@ error). Invalid configuration stops startup with every problem listed.
 | `SYMBIONT_LISTEN_ADDR` | no | `:8080` | |
 | `SYMBIONT_SP_CONFIG_FILE` | yes | | Service provider YAML ([example](examples/symbiont.yaml)). |
 | `SYMBIONT_TRUSTED_PROXIES` | no | (none) | Comma-separated CIDRs/IPs. See [Client IPs behind a proxy](#client-ips-behind-a-proxy). |
+| `SYMBIONT_TRUST_CF_CONNECTING_IP` | no | `false` | Prefer `CF-Connecting-IP` from a trusted proxy. Set only when every trusted proxy is Cloudflare. |
 | `OIDC_ISSUER` | yes | | Must equal the discovery document's `issuer` exactly (trailing slash matters). Discovery runs at startup. |
 | `OIDC_CLIENT_ID` | yes | | |
 | `OIDC_CLIENT_SECRET` † | yes | | |
@@ -153,9 +154,11 @@ reverse proxy's / uptime monitor's health check.
 
 `remote_addr` in logs is always the TCP peer (behind a tunnel, that is the
 tunnel). With `SYMBIONT_TRUSTED_PROXIES` set, requests whose peer falls in
-one of those ranges also log `client_ip`: the value of `CF-Connecting-IP`
-if present and valid, otherwise the right-most `X-Forwarded-For` entry that
-is not itself a trusted proxy. Requests from any other peer never use these
+one of those ranges also log `client_ip`: the right-most `X-Forwarded-For`
+entry that is not itself a trusted proxy. With
+`SYMBIONT_TRUST_CF_CONNECTING_IP=true` a valid `CF-Connecting-IP` wins
+instead; enable that only when every trusted proxy is Cloudflare, because
+any other proxy lets a client set the header. Requests from any other peer never use these
 headers, since a client could set them to anything. Ranges larger than /8
 (IPv4) or /16 (IPv6) produce a startup warning. `client_ip` is logging
 only; it is never used for decisions.

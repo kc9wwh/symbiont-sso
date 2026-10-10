@@ -224,7 +224,7 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger, p *idp.
 	srv := server.New(server.Options{
 		Logger:   logger,
 		IdP:      p,
-		ClientIP: clientip.New(cfg.TrustedProxies),
+		ClientIP: newClientIPResolver(cfg),
 		Login: &server.Login{
 			OIDC:     oc,
 			Pending:  pending,
@@ -243,6 +243,14 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger, p *idp.
 		},
 	})
 	return srv.Run(ctx, ln)
+}
+
+func newClientIPResolver(cfg *config.Config) *clientip.Resolver {
+	var opts []clientip.Option
+	if cfg.TrustCFConnectingIP {
+		opts = append(opts, clientip.WithCloudflareHeader())
+	}
+	return clientip.New(cfg.TrustedProxies, opts...)
 }
 
 func prefixStrings(ps []netip.Prefix) []string {

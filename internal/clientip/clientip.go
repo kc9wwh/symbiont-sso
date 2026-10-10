@@ -24,7 +24,17 @@ const maxXFFHops = 32
 // Resolver maps a request to the client IP for logging.
 type Resolver struct {
 	trusted []netip.Prefix
+	cf      bool
 }
+
+// Option customises a Resolver.
+type Option func(*Resolver)
+
+// WithCloudflareHeader makes a trusted peer's CF-Connecting-IP take
+// precedence over X-Forwarded-For. Enable it only when every trusted proxy is
+// Cloudflare (which overwrites the header); behind any other proxy a client
+// could set the header itself and choose the logged address.
+func WithCloudflareHeader() Option { return func(r *Resolver) { r.cf = true } }
 
 // ParsePrefixes parses a comma-separated list of CIDRs or bare IPs (a bare
 // IP is a /32 or /128). Empty input yields no prefixes.
@@ -70,7 +80,13 @@ func unmapPrefix(p netip.Prefix) netip.Prefix {
 
 // New returns a Resolver trusting the given prefixes. With none, forwarding
 // headers are never used.
-func New(trusted []netip.Prefix) *Resolver { return &Resolver{trusted: trusted} }
+func New(trusted []netip.Prefix, opts ...Option) *Resolver {
+	r := &Resolver{trusted: trusted}
+	for _, o := range opts {
+		o(r)
+	}
+	return r
+}
 
 // Enabled reports whether any proxy is trusted.
 func (r *Resolver) Enabled() bool { return r != nil && len(r.trusted) > 0 }
@@ -97,8 +113,9 @@ func (r *Resolver) ClientIP(req *http.Request) (string, bool) {
 		return peer.String(), false
 	}
 	// Cloudflare sets CF-Connecting-IP to the visitor address and strips any
-	// client-supplied value, so it is authoritative once the peer is trusted.
-	if v := strings.TrimSpace(req.Header.Get(HeaderCFConnectingIP)); v != "" {
+	// client-supplied value, so it is authoritative once the peer is trusted
+	// and the operator has said the proxy is Cloudflare.
+	if v := strings.TrimSpace(req.Header.Get(HeaderCFConnectingIP)); r.cf && v != "" {
 		if a, err := netip.ParseAddr(v); err == nil && a.Zone() == "" {
 			return a.Unmap().String(), true
 		}

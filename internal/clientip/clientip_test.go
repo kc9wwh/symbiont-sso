@@ -12,7 +12,7 @@ func mustResolver(t *testing.T, cidrs string) *Resolver {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(p)
+	return New(p, WithCloudflareHeader())
 }
 
 func req(remote string, headers map[string][]string) *http.Request {
@@ -72,6 +72,18 @@ func TestClientIP(t *testing.T) {
 				t.Errorf("ClientIP = %q,%v; want %q,%v", got, fromHdr, tc.want, tc.fromHdr)
 			}
 		})
+	}
+}
+
+// Without the Cloudflare opt-in a client-set CF-Connecting-IP must not pick
+// the logged address, even from a trusted peer.
+func TestCFHeaderIgnoredByDefault(t *testing.T) {
+	p, _ := ParsePrefixes("172.16.0.0/12")
+	r := req("172.18.0.5:51234", map[string][]string{
+		"CF-Connecting-IP": {"6.6.6.6"}, "X-Forwarded-For": {"203.0.113.9"},
+	})
+	if got, ok := New(p).ClientIP(r); got != "203.0.113.9" || !ok {
+		t.Errorf("ClientIP = %q,%v; want XFF value 203.0.113.9,true", got, ok)
 	}
 }
 
