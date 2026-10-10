@@ -38,7 +38,16 @@ func TestRunServesAndShutsDownGracefully(t *testing.T) {
 	runErr := make(chan error, 1)
 	go func() { runErr <- s.Run(ctx, ln) }()
 
-	resp, err := http.Get(base + "/healthz")
+	// No keep-alives: with a pooled transport, the /slow request can race a
+	// fresh dial against the /healthz connection returning to the idle pool.
+	// The losing dial is accepted but never sends a request, and Shutdown
+	// treats such StateNew connections as active for 5s, which exceeds the
+	// ShutdownTimeout above and fails the test intermittently.
+	tr := &http.Transport{DisableKeepAlives: true}
+	defer tr.CloseIdleConnections()
+	client := &http.Client{Transport: tr}
+
+	resp, err := client.Get(base + "/healthz")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +58,7 @@ func TestRunServesAndShutsDownGracefully(t *testing.T) {
 
 	slowBody := make(chan string, 1)
 	go func() {
-		r, err := http.Get(base + "/slow")
+		r, err := client.Get(base + "/slow")
 		if err != nil {
 			slowBody <- "error: " + err.Error()
 			return
@@ -82,7 +91,7 @@ func TestRunServesAndShutsDownGracefully(t *testing.T) {
 	if !strings.Contains(logs.String(), "http server stopped") {
 		t.Errorf("missing shutdown log: %s", logs.String())
 	}
-	if r, err := http.Get(base + "/healthz"); err == nil {
+	if r, err := client.Get(base + "/healthz"); err == nil {
 		_ = r.Body.Close()
 		t.Errorf("server still accepting connections after shutdown")
 	}
