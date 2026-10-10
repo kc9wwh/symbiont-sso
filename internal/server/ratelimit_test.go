@@ -69,28 +69,22 @@ func TestRateLimiterBoundedTable(t *testing.T) {
 	}
 }
 
-func TestLimitedReturns429(t *testing.T) {
+func TestAllowLoginReturns429(t *testing.T) {
 	s := New(Options{RateLimit: NewRateLimiter(2, nil)})
-	called := 0
-	h := s.limited(func(http.ResponseWriter, *http.Request) { called++ })
 
-	do := func(remote string) *httptest.ResponseRecorder {
+	do := func(remote string) (bool, *httptest.ResponseRecorder) {
 		r := httptest.NewRequest(http.MethodGet, "/sso", nil)
 		r.RemoteAddr = remote
 		w := httptest.NewRecorder()
-		h(w, r)
-		return w
+		return s.allowLogin(w, r), w
 	}
 	do("192.0.2.1:1000")
 	do("192.0.2.1:2000") // same host, different port: one client
-	w := do("192.0.2.1:3000")
-	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" {
-		t.Errorf("third request: status %d, Retry-After %q; want 429 with Retry-After", w.Code, w.Header().Get("Retry-After"))
+	ok, w := do("192.0.2.1:3000")
+	if ok || w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" {
+		t.Errorf("third request: allowed=%v status %d, Retry-After %q; want refused with 429 and Retry-After", ok, w.Code, w.Header().Get("Retry-After"))
 	}
-	if called != 2 {
-		t.Errorf("handler ran %d times, want 2", called)
-	}
-	if w := do("192.0.2.2:1000"); w.Code == http.StatusTooManyRequests {
+	if ok, _ := do("192.0.2.2:1000"); !ok {
 		t.Error("a different client was limited")
 	}
 }
@@ -120,11 +114,9 @@ func TestLimiterKeyGroupsIPv6By64(t *testing.T) {
 	}
 }
 
-func TestLimitedPassThroughWhenDisabled(t *testing.T) {
+func TestAllowLoginWhenDisabled(t *testing.T) {
 	s := New(Options{})
-	ran := false
-	s.limited(func(http.ResponseWriter, *http.Request) { ran = true })(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
-	if !ran {
-		t.Error("handler not called with limiting disabled")
+	if !s.allowLogin(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil)) {
+		t.Error("login refused with limiting disabled")
 	}
 }

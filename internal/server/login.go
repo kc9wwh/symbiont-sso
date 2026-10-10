@@ -146,6 +146,9 @@ const catPendingFull = "pending_store_full"
 // startLogin records a pending login, binds its state to this browser with
 // a signed cookie, and redirects to the identity provider.
 func (s *Server) startLogin(w http.ResponseWriter, r *http.Request, p session.Pending) {
+	if !s.allowLogin(w, r) {
+		return
+	}
 	l := s.opts.Login
 	state, nonce, verifier := session.NewID(), session.NewID(), oidcrp.NewVerifier()
 	now := l.now()

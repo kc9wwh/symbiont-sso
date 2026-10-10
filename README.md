@@ -92,7 +92,7 @@ error). Invalid configuration stops startup with every problem listed.
 | `SYMBIONT_LISTEN_ADDR` | no | `:8080` | |
 | `SYMBIONT_SP_CONFIG_FILE` | yes | | Service provider YAML ([example](examples/symbiont.yaml)). |
 | `SYMBIONT_TRUSTED_PROXIES` | no | (none) | Comma-separated CIDRs/IPs. See [Client IPs behind a proxy](#client-ips-behind-a-proxy). |
-| `SYMBIONT_RATE_LIMIT_PER_MINUTE` | no | `60` | Per-client cap on requests to `/sso` and `/login/*`; `0` disables. Behind a proxy, also set `SYMBIONT_TRUSTED_PROXIES` or every user shares one budget. |
+| `SYMBIONT_RATE_LIMIT_PER_MINUTE` | no | `60` | Per-client cap on starting a login (redirects to the IdP from `/sso` and `/login/*`); the post-login replay and requests served from a live session are not counted. `0` disables. Behind a proxy, also set `SYMBIONT_TRUSTED_PROXIES` or every user shares one budget. |
 | `SYMBIONT_TRUST_CF_CONNECTING_IP` | no | `false` | Prefer `CF-Connecting-IP` from a trusted proxy. Set only when every trusted proxy is Cloudflare. |
 | `OIDC_ISSUER` | yes | | Must equal the discovery document's `issuer` exactly (trailing slash matters). Discovery runs at startup. |
 | `OIDC_CLIENT_ID` | yes | | |

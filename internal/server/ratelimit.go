@@ -18,8 +18,8 @@ const ipv6BucketBits = 64
 // that many distinct addresses.
 const maxLimiterKeys = 10000
 
-// RateLimiter is a per-client token bucket guarding the endpoints that start
-// a login (/sso and /login/*). Each start allocates a pending-login entry,
+// RateLimiter is a per-client token bucket guarding the start of a login
+// (see Server.allowLogin). Each start allocates a pending-login entry,
 // and anonymous callers can make as many as they like.
 type RateLimiter struct {
 	mu      sync.Mutex
@@ -90,23 +90,22 @@ func (l *RateLimiter) purgeIdleLocked(now time.Time) {
 	}
 }
 
-// limited wraps h so that requests over the client's budget get a 429 page.
-func (s *Server) limited(h http.HandlerFunc) http.HandlerFunc {
-	if s.opts.RateLimit == nil {
-		return h
+// allowLogin charges the caller's budget for starting a login. It is called
+// where a pending login is about to be allocated, so only requests that
+// cost state count: the bridge's own post-login replay and requests answered
+// from a live session never reach it. When the budget is spent it writes a
+// 429 page and returns false.
+func (s *Server) allowLogin(w http.ResponseWriter, r *http.Request) bool {
+	ok, wait := s.opts.RateLimit.Allow(s.limiterKey(r))
+	if ok {
+		return true
 	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		ok, wait := s.opts.RateLimit.Allow(s.limiterKey(r))
-		if ok {
-			h(w, r)
-			return
-		}
-		secs := int(wait.Seconds()) + 1
-		w.Header().Set("Retry-After", strconv.Itoa(secs))
-		s.reqLog(r).WarnContext(r.Context(), "rate limited", "error_category", "rate_limited", "retry_after_seconds", secs)
-		s.errorPage(w, r, http.StatusTooManyRequests, "Too many sign-in attempts",
-			"Please wait a moment and try again.")
-	}
+	secs := int(wait.Seconds()) + 1
+	w.Header().Set("Retry-After", strconv.Itoa(secs))
+	s.reqLog(r).WarnContext(r.Context(), "rate limited", "error_category", "rate_limited", "retry_after_seconds", secs)
+	s.errorPage(w, r, http.StatusTooManyRequests, "Too many sign-in attempts",
+		"Please wait a moment and try again.")
+	return false
 }
 
 // limiterKey identifies the caller: the forwarded client address when a

@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"net/http/cookiejar"
 	"strings"
 	"testing"
 	"time"
@@ -111,4 +112,24 @@ func TestE2EPlainLoginIgnoresAuthTime(t *testing.T) {
 	if a, _ := e.fullLogin(e.sp(e2eAdminEntity, e2eAdminACS), ""); a == nil {
 		t.Fatal("plain login failed without auth_time")
 	}
+}
+
+// The limiter charges when a login is started, not for the bridge's own
+// replay POST: a complete login costs one token, and a login answered from a
+// live session costs none.
+func TestE2ERateLimitChargesLoginStartsOnly(t *testing.T) {
+	e := newE2E(t, e2eOpts{rateLimit: 1})
+	sp := e.sp(e2eAdminEntity, e2eAdminACS)
+	if a, _ := e.fullLogin(sp, ""); a == nil {
+		t.Fatal("login with a budget of one failed (replay charged?)")
+	}
+	ssoURL, _ := e.startSSO(sp, "")
+	if resp := e.do(http.MethodGet, ssoURL, nil); resp.StatusCode == http.StatusTooManyRequests {
+		t.Fatal("request answered from a live session was rate limited")
+	}
+
+	jar, _ := cookiejar.New(nil)
+	e.browser.Jar = jar // a new browser from the same address
+	ssoURL, _ = e.startSSO(sp, "")
+	e.expectFail(e.do(http.MethodGet, ssoURL, nil), http.StatusTooManyRequests, "rate_limited")
 }
