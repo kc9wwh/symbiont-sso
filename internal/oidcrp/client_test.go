@@ -34,7 +34,7 @@ func newClient(t *testing.T, m *mockoidc.MockOIDC, fetchUserinfo bool) *oidcrp.C
 // login runs the authorization step and returns the code.
 func login(t *testing.T, c *oidcrp.Client, state, nonce, verifier string) string {
 	t.Helper()
-	back := oidctest.Authorize(t, c.AuthCodeURL(state, nonce, verifier))
+	back := oidctest.Authorize(t, c.AuthCodeURL(state, nonce, verifier, false))
 	if got := back.Query().Get("state"); got != state {
 		t.Fatalf("state round-trip = %q", got)
 	}
@@ -58,11 +58,35 @@ func TestAuthCodeURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	u := c.AuthCodeURL("st", "nn", oidcrp.NewVerifier())
+	u := c.AuthCodeURL("st", "nn", oidcrp.NewVerifier(), false)
 	for _, want := range []string{"state=st", "nonce=nn", "code_challenge_method=S256", "code_challenge=", "prompt=login",
 		"response_type=code", "scope=openid+email", "redirect_uri=https%3A%2F%2Fsaml.example.com%2Foidc%2Fcallback"} {
 		if !strings.Contains(u, want) {
 			t.Errorf("auth URL missing %s: %s", want, u)
+		}
+	}
+}
+
+func TestAuthCodeURLForceLogin(t *testing.T) {
+	m := oidctest.Start(t)
+	for _, tc := range []struct{ prompt, want string }{
+		{"", "prompt=login"},
+		{"login", "prompt=login"},
+		{"select_account", "prompt=login+select_account"},
+	} {
+		c, err := oidcrp.New(context.Background(), oidcrp.Options{
+			Issuer: m.Issuer(), ClientID: m.ClientID, RedirectURL: redirect,
+			Scopes: []string{"openid"}, Prompt: tc.prompt,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		u := c.AuthCodeURL("st", "nn", oidcrp.NewVerifier(), true)
+		if !strings.Contains(u, tc.want) || strings.Contains(u, tc.want+"+login") {
+			t.Errorf("prompt %q: auth URL %s, want %s once", tc.prompt, u, tc.want)
+		}
+		if strings.Contains(c.AuthCodeURL("st", "nn", oidcrp.NewVerifier(), false), "prompt=login") && tc.prompt == "" {
+			t.Error("prompt=login added without forceLogin")
 		}
 	}
 }

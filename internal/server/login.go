@@ -13,7 +13,7 @@ import (
 
 // OIDCClient is the upstream relying party (implemented by *oidcrp.Client).
 type OIDCClient interface {
-	AuthCodeURL(state, nonce, verifier string) string
+	AuthCodeURL(state, nonce, verifier string, forceLogin bool) string
 	Exchange(ctx context.Context, code, verifier, nonce string) (*oidcrp.Result, error)
 }
 
@@ -77,6 +77,13 @@ func (s *Server) currentSession(r *http.Request) (*session.Session, string) {
 }
 
 func identityFromSession(sess *session.Session) *idp.Identity {
+	authTime := sess.AuthTime
+	if authTime.IsZero() {
+		// The provider did not report auth_time; the bridge session was
+		// created at login, which is the best statement of when the user
+		// authenticated.
+		authTime = sess.IssuedAt
+	}
 	return &idp.Identity{
 		SessionID: sess.ID,
 		Subject:   sess.Subject,
@@ -84,7 +91,7 @@ func identityFromSession(sess *session.Session) *idp.Identity {
 		Name:      sess.Name,
 		Groups:    sess.Groups,
 		Claims:    sess.Claims,
-		AuthTime:  sess.AuthTime,
+		AuthTime:  authTime,
 	}
 }
 
@@ -100,8 +107,15 @@ func (o oidcSessions) Identity(w http.ResponseWriter, r *http.Request, req *idp.
 	}
 	log := s.reqLog(r, "flow", string(kind), "sp_id", req.SP.ID)
 	sess, reason := s.currentSession(r)
-	if sess != nil {
+	// An SP that sent ForceAuthn must see a fresh authentication, so an
+	// existing bridge session does not count. The post-login replay is the
+	// exception: its session was created by that very re-authentication.
+	forceAuthn := !req.IDPInitiated && !req.Replayed && req.ForceAuthn()
+	if sess != nil && !forceAuthn {
 		return identityFromSession(sess)
+	}
+	if sess != nil {
+		log.DebugContext(r.Context(), "ignoring bridge session: SP requested ForceAuthn")
 	}
 	if req.Replayed {
 		// We just completed a login and set the session cookie, but the
@@ -120,6 +134,7 @@ func (o oidcSessions) Identity(w http.ResponseWriter, r *http.Request, req *idp.
 		SPID:       req.SP.ID,
 		RawRequest: req.RawXML, // empty for IdP-initiated
 		RelayState: req.RelayState,
+		ForceLogin: forceAuthn,
 		ReceivedAt: req.ReceivedAt,
 	})
 	return nil
@@ -143,5 +158,5 @@ func (s *Server) startLogin(w http.ResponseWriter, r *http.Request, p session.Pe
 	expires := now.Add(l.PendingTTL)
 	l.Cookies.Set(w, l.Cookies.StateName(state), l.Signer.Sign(session.PurposeState, state, expires), now, expires)
 	log.InfoContext(r.Context(), "redirecting to identity provider")
-	http.Redirect(w, r, l.OIDC.AuthCodeURL(state, nonce, verifier), http.StatusFound)
+	http.Redirect(w, r, l.OIDC.AuthCodeURL(state, nonce, verifier, p.ForceLogin), http.StatusFound)
 }

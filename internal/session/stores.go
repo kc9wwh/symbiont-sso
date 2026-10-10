@@ -35,6 +35,9 @@ type Pending struct {
 	// RawRequest is the decoded AuthnRequest XML (KindSP only).
 	RawRequest []byte
 	RelayState string
+	// ForceLogin asks the upstream provider to re-authenticate the user
+	// (the SP sent ForceAuthn="true").
+	ForceLogin bool
 	// ReceivedAt is when the AuthnRequest first arrived; replays are judged
 	// at this time.
 	ReceivedAt   time.Time
