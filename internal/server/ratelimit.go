@@ -18,6 +18,10 @@ const ipv6BucketBits = 64
 // that many distinct addresses.
 const maxLimiterKeys = 10000
 
+// purgeInterval is the minimum time between scans of a full client table, so
+// a flood of new addresses cannot make every request scan it.
+const purgeInterval = time.Second
+
 // RateLimiter is a per-client token bucket guarding the start of a login
 // (see Server.allowLogin). Each start allocates a pending-login entry,
 // and anonymous callers can make as many as they like.
@@ -27,6 +31,8 @@ type RateLimiter struct {
 	burst   float64
 	now     func() time.Time
 	clients map[string]*bucket
+	// nextPurge is the earliest time a full table may be scanned again.
+	nextPurge time.Time
 }
 
 type bucket struct {
@@ -63,7 +69,11 @@ func (l *RateLimiter) Allow(key string) (ok bool, retryAfter time.Duration) {
 	b, found := l.clients[key]
 	if !found {
 		if len(l.clients) >= maxLimiterKeys {
+			if now.Before(l.nextPurge) {
+				return true, 0
+			}
 			l.purgeIdleLocked(now)
+			l.nextPurge = now.Add(purgeInterval)
 			if len(l.clients) >= maxLimiterKeys {
 				return true, 0
 			}

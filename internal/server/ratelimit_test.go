@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -66,6 +67,27 @@ func TestRateLimiterBoundedTable(t *testing.T) {
 	}
 	if len(l.clients) != 1 {
 		t.Errorf("idle clients not purged: %d entries", len(l.clients))
+	}
+}
+
+// A full table must not be rescanned for every new client: an attacker
+// with many addresses would turn each request into a 10k-entry scan.
+func TestRateLimiterPurgeIsThrottled(t *testing.T) {
+	clk := &fakeClock{t: time.Unix(1_700_000_000, 0)}
+	l := NewRateLimiter(60, clk.now)
+	for i := 0; i < maxLimiterKeys; i++ {
+		l.clients[strconv.Itoa(i)] = &bucket{tokens: 0, last: clk.t} // all drained
+	}
+	l.Allow("first")                // scans, finds nothing idle
+	l.clients["0"].tokens = l.burst // now idle
+	l.Allow("second")               // within the interval: no scan
+	if _, ok := l.clients["0"]; !ok {
+		t.Fatal("table rescanned within the purge interval")
+	}
+	clk.t = clk.t.Add(purgeInterval)
+	l.Allow("third")
+	if _, ok := l.clients["0"]; ok {
+		t.Error("idle client not purged after the interval")
 	}
 }
 
