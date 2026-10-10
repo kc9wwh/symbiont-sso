@@ -107,7 +107,7 @@ func (p *IdP) Metadata() *saml.EntityDescriptor {
 func (p *IdP) MetadataXML() ([]byte, error) {
 	b, err := xml.MarshalIndent(p.Metadata(), "", "  ")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal metadata: %w", err)
 	}
 	return append([]byte(xml.Header), b...), nil
 }

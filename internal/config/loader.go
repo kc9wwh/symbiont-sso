@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -186,7 +187,8 @@ func readLimited(path string, limit int64) ([]byte, error) {
 // unwrapPathErr keeps messages short: *fs.PathError already carries the
 // path, which callers print themselves.
 func unwrapPathErr(err error) error {
-	if pe, ok := err.(*os.PathError); ok {
+	var pe *os.PathError
+	if errors.As(err, &pe) {
 		return pe.Err
 	}
 	return err
