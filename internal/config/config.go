@@ -47,6 +47,8 @@ type Config struct {
 
 	// PendingRequestTTL bounds how long an in-flight login may take.
 	PendingRequestTTL time.Duration
+	// RateLimitPerMinute caps login-start requests per client; 0 disables.
+	RateLimitPerMinute int
 	// LogLevel is the minimum slog level.
 	LogLevel slog.Level
 
@@ -130,6 +132,7 @@ func Load(lookup LookupFunc) (*Config, error) {
 		TTL:    l.positiveDuration(EnvSessionTTL, DefaultSessionTTL),
 	}
 	cfg.PendingRequestTTL = l.positiveDuration(EnvPendingRequestTTL, DefaultPendingTTL)
+	cfg.RateLimitPerMinute = l.nonNegativeInt(EnvRateLimitPerMinute, DefaultRateLimitPerMinute)
 	cfg.LogLevel = l.logLevel(EnvLogLevel)
 
 	l.checkRemovedVars()

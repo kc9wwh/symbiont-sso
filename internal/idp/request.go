@@ -16,8 +16,10 @@ import (
 )
 
 // MaxRequestBytes bounds both the raw /sso request (POST body or query
-// string) and the decoded AuthnRequest XML. Real AuthnRequests are ~1-2 KB.
-const MaxRequestBytes = 64 << 10
+// string) and the decoded AuthnRequest XML. Real AuthnRequests are ~1-2 KB
+// (a few KB when signed); the raw XML is held in memory for the lifetime of
+// the pending login, so keep this tight.
+const MaxRequestBytes = 16 << 10
 
 // MaxRelayStateBytes is the SAML bindings limit on RelayState.
 const MaxRelayStateBytes = 80

@@ -10,6 +10,15 @@ import (
 // entries.
 var ErrNotFound = errors.New("session: not found or expired")
 
+// ErrStoreFull is returned when a store refuses a new entry because it holds
+// its maximum number of live entries.
+var ErrStoreFull = errors.New("session: store is full")
+
+// DefaultPendingMaxEntries bounds in-flight logins. Unlike sessions, pending
+// logins are created by unauthenticated requests, so a full store rejects new
+// logins instead of evicting logins that are already in progress.
+const DefaultPendingMaxEntries = 5000
+
 // Kind identifies which flow started a pending login.
 type Kind string
 
@@ -87,12 +96,17 @@ func NewMemoryPendingStore(o MemoryOptions) *MemoryPendingStore {
 	if o.TTL <= 0 {
 		o.TTL = 10 * time.Minute
 	}
+	if o.MaxEntries <= 0 {
+		o.MaxEntries = DefaultPendingMaxEntries
+	}
 	return &MemoryPendingStore{s: newMemStore[Pending](o.MaxEntries, o.Now), ttl: o.TTL}
 }
 
 // Put implements PendingStore.
 func (m *MemoryPendingStore) Put(_ context.Context, state string, p Pending) error {
-	m.s.put(state, p, m.s.now().Add(m.ttl))
+	if !m.s.tryPut(state, p, m.s.now().Add(m.ttl)) {
+		return ErrStoreFull
+	}
 	return nil
 }
 

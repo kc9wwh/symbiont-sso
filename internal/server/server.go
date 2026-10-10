@@ -41,6 +41,9 @@ type Options struct {
 	// ClientIP resolves the real client IP for logs when behind trusted
 	// proxies. Nil logs only the socket peer.
 	ClientIP *clientip.Resolver
+	// RateLimit throttles requests that start a login (/sso, /login/*) per
+	// client. Nil disables it.
+	RateLimit *RateLimiter
 
 	ReadHeaderTimeout time.Duration
 	ReadTimeout       time.Duration
@@ -101,12 +104,12 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	if s.opts.IdP != nil {
 		mux.HandleFunc("GET "+idp.MetadataPath, s.handleMetadata)
-		mux.HandleFunc("GET "+idp.SSOPath, s.handleSSO)
-		mux.HandleFunc("POST "+idp.SSOPath, s.handleSSO)
+		mux.HandleFunc("GET "+idp.SSOPath, s.limited(s.handleSSO))
+		mux.HandleFunc("POST "+idp.SSOPath, s.limited(s.handleSSO))
 	}
 	if s.opts.Login != nil {
 		mux.HandleFunc("GET "+CallbackPath, s.handleCallback)
-		mux.HandleFunc("GET "+LoginPathPrefix+"{sp_id}", s.handleLogin)
+		mux.HandleFunc("GET "+LoginPathPrefix+"{sp_id}", s.limited(s.handleLogin))
 	}
 }
 
