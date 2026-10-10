@@ -8,6 +8,8 @@ const (
 	EnvListenAddr          = "SYMBIONT_LISTEN_ADDR"
 	EnvSPConfigFile        = "SYMBIONT_SP_CONFIG_FILE"
 	EnvTrustedProxies      = "SYMBIONT_TRUSTED_PROXIES"
+	EnvTrustCFConnectingIP = "SYMBIONT_TRUST_CF_CONNECTING_IP"
+	EnvRateLimitPerMinute  = "SYMBIONT_RATE_LIMIT_PER_MINUTE"
 	EnvOIDCIssuer          = "OIDC_ISSUER"
 	EnvOIDCClientID        = "OIDC_CLIENT_ID"
 	EnvOIDCClientSecret    = "OIDC_CLIENT_SECRET"
@@ -36,6 +38,9 @@ const (
 	DefaultScopes     = "openid email profile groups"
 	DefaultSessionTTL = 60 * time.Second
 	DefaultPendingTTL = 10 * time.Minute
+	// DefaultRateLimitPerMinute is the per-client budget for requests that
+	// start a login. Real users make a handful per minute at most.
+	DefaultRateLimitPerMinute = 60
 
 	defaultEmailClaim  = "email"
 	defaultNameClaim   = "name"

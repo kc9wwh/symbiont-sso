@@ -72,12 +72,11 @@ func (r *ServiceProviders) GetServiceProvider(_ *http.Request, entityID string) 
 	return md, nil
 }
 
-// spMetadata synthesises SP metadata from configuration. All ACS endpoints
-// use the HTTP-POST binding (the only response binding crewjam's IdP
-// supports). The IdP-initiated ACS, when enabled, is listed first and marked
-// isDefault, so even crewjam code paths that pick "the first POST ACS" or
-// "the default ACS" land on it.
-func spMetadata(sp *config.ServiceProvider) *saml.EntityDescriptor {
+// orderedACSURLs lists the SP's ACS URLs in the order crewjam resolves
+// AssertionConsumerServiceIndex against: the IdP-initiated ACS, when enabled,
+// first, then the rest in configuration order. Request preflight must index
+// into this same list, not sp.ACSURLs.
+func orderedACSURLs(sp *config.ServiceProvider) []string {
 	urls := slices.Clone(sp.ACSURLs)
 	if sp.IDPInitiatedEnabled && sp.IDPInitiatedACSURL != "" {
 		if i := slices.Index(urls, sp.IDPInitiatedACSURL); i > 0 {
@@ -85,6 +84,16 @@ func spMetadata(sp *config.ServiceProvider) *saml.EntityDescriptor {
 			urls = slices.Insert(urls, 0, sp.IDPInitiatedACSURL)
 		}
 	}
+	return urls
+}
+
+// spMetadata synthesises SP metadata from configuration. All ACS endpoints
+// use the HTTP-POST binding (the only response binding crewjam's IdP
+// supports). The IdP-initiated ACS, when enabled, is listed first and marked
+// isDefault, so even crewjam code paths that pick "the first POST ACS" or
+// "the default ACS" land on it.
+func spMetadata(sp *config.ServiceProvider) *saml.EntityDescriptor {
+	urls := orderedACSURLs(sp)
 	acs := make([]saml.IndexedEndpoint, len(urls))
 	for i, u := range urls {
 		isDefault := i == 0

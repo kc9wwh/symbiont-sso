@@ -87,3 +87,16 @@ func TestDomainCheckIsCaseInsensitive(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestExtractIdentityRejectsMalformedEmail(t *testing.T) {
+	for _, email := range []string{
+		"x@evil.com@allowed.com", "Alice <a@allowed.com>", "a b@allowed.com", "a@", "@allowed.com", "nodomain",
+	} {
+		_, err := ExtractIdentity(res(map[string]any{"email": email, "email_verified": true}),
+			names, Policy{AllowedDomains: []string{"allowed.com"}})
+		var ie *Error
+		if !errors.As(err, &ie) || ie.Category != CategoryMissingEmail {
+			t.Errorf("email %q: err = %v, want %s", email, err, CategoryMissingEmail)
+		}
+	}
+}

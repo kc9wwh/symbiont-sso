@@ -92,6 +92,8 @@ error). Invalid configuration stops startup with every problem listed.
 | `SYMBIONT_LISTEN_ADDR` | no | `:8080` | |
 | `SYMBIONT_SP_CONFIG_FILE` | yes | | Service provider YAML ([example](examples/symbiont.yaml)). |
 | `SYMBIONT_TRUSTED_PROXIES` | no | (none) | Comma-separated CIDRs/IPs. See [Client IPs behind a proxy](#client-ips-behind-a-proxy). |
+| `SYMBIONT_RATE_LIMIT_PER_MINUTE` | no | `60` | Per-client cap on starting a login (redirects to the IdP from `/sso` and `/login/*`); the post-login replay and requests served from a live session are not counted. `0` disables. Behind a proxy, also set `SYMBIONT_TRUSTED_PROXIES` or every user shares one budget. |
+| `SYMBIONT_TRUST_CF_CONNECTING_IP` | no | `false` | Prefer `CF-Connecting-IP` from a trusted proxy. Set only when every trusted proxy is Cloudflare. |
 | `OIDC_ISSUER` | yes | | Must equal the discovery document's `issuer` exactly (trailing slash matters). Discovery runs at startup. |
 | `OIDC_CLIENT_ID` | yes | | |
 | `OIDC_CLIENT_SECRET` † | yes | | |
@@ -153,12 +155,18 @@ reverse proxy's / uptime monitor's health check.
 
 `remote_addr` in logs is always the TCP peer (behind a tunnel, that is the
 tunnel). With `SYMBIONT_TRUSTED_PROXIES` set, requests whose peer falls in
-one of those ranges also log `client_ip`: the value of `CF-Connecting-IP`
-if present and valid, otherwise the right-most `X-Forwarded-For` entry that
-is not itself a trusted proxy. Requests from any other peer never use these
+one of those ranges also log `client_ip`: the right-most `X-Forwarded-For`
+entry that is not itself a trusted proxy. With
+`SYMBIONT_TRUST_CF_CONNECTING_IP=true` a valid `CF-Connecting-IP` wins
+instead; enable that only when every trusted proxy is Cloudflare, because
+any other proxy lets a client set the header. Requests from any other peer never use these
 headers, since a client could set them to anything. Ranges larger than /8
-(IPv4) or /16 (IPv6) produce a startup warning. `client_ip` is logging
-only; it is never used for decisions.
+(IPv4) or /16 (IPv6) produce a startup warning. Besides logging,
+`client_ip` (or the TCP peer when it is absent) keys the per-client login
+rate limit, with IPv6 clients grouped by /64. A wrong
+`SYMBIONT_TRUSTED_PROXIES` therefore affects throttling too: too narrow and
+every user shares the proxy's budget, too wide and a client can pick its
+own bucket. It is never used for access decisions.
 
 ## Sessions and re-authentication
 
@@ -171,6 +179,13 @@ own session. To force users to authenticate at the IdP every time:
 - set `OIDC_PROMPT=login`, or
 - enable the IdP client's own setting (Pocket ID: **Requires
   reauthentication** on the OIDC client).
+
+If a service provider sends `ForceAuthn="true"`, symbiont ignores its own
+session and asks the IdP to re-authenticate (`prompt=login&max_age=0`). It
+then requires the ID token's `auth_time` to prove that happened, and refuses
+the login (`reauthentication_not_performed` in the logs) if `auth_time` is
+missing or older than the request. The IdP must therefore return `auth_time`
+(Pocket ID does). Fleet does not send `ForceAuthn`.
 
 There is no Single Logout: Fleet does not implement SAML SLO, so logging out
 of Fleet ends neither the symbiont nor the IdP session. Keep `SESSION_TTL`
@@ -366,7 +381,7 @@ them at the IdP.
 ## Limitations
 
 - Single instance: sessions and pending logins are in memory (bounded to
-  10,000 each). Running replicas requires sticky sessions and still loses
+  10,000 sessions and 5,000 pending logins). Running replicas requires sticky sessions and still loses
   state on restart.
 - No SAML Single Logout, no encrypted assertions, no signed AuthnRequest
   verification (requests are bound to configured SPs and ACS URLs instead).

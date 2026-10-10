@@ -73,6 +73,8 @@ type e2eOpts struct {
 	sps []config.ServiceProvider
 	// anyUser keeps mockoidc's default user instead of queueing adminUser.
 	anyUser bool
+	// rateLimit is the per-minute login-start budget (0 = unlimited).
+	rateLimit int
 }
 
 // defaultE2ESPs is the amendment's two-SP setup, loaded through the real
@@ -151,7 +153,7 @@ func newE2E(t *testing.T, o e2eOpts) *e2e {
 		SessionTTL: o.sessionTTL, PendingTTL: 10 * time.Minute, Now: e.clk.now,
 	}
 	logger := slog.New(slog.NewJSONHandler(e.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	h = New(Options{Logger: logger, IdP: e.idp, Login: e.login}).Handler()
+	h = New(Options{Logger: logger, IdP: e.idp, Login: e.login, RateLimit: NewRateLimiter(o.rateLimit, nil)}).Handler()
 
 	jar, _ := cookiejar.New(nil)
 	e.browser = &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}

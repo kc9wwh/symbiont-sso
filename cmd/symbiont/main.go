@@ -220,11 +220,13 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger, p *idp.
 		"oidc_redirect_uri", cfg.CallbackURL(),
 		"session_ttl", cfg.Session.TTL.String(),
 		"trusted_proxies", prefixStrings(cfg.TrustedProxies),
+		"rate_limit_per_minute", cfg.RateLimitPerMinute,
 	)
 	srv := server.New(server.Options{
-		Logger:   logger,
-		IdP:      p,
-		ClientIP: clientip.New(cfg.TrustedProxies),
+		Logger:    logger,
+		IdP:       p,
+		ClientIP:  newClientIPResolver(cfg),
+		RateLimit: server.NewRateLimiter(cfg.RateLimitPerMinute, nil),
 		Login: &server.Login{
 			OIDC:     oc,
 			Pending:  pending,
@@ -243,6 +245,14 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger, p *idp.
 		},
 	})
 	return srv.Run(ctx, ln)
+}
+
+func newClientIPResolver(cfg *config.Config) *clientip.Resolver {
+	var opts []clientip.Option
+	if cfg.TrustCFConnectingIP {
+		opts = append(opts, clientip.WithCloudflareHeader())
+	}
+	return clientip.New(cfg.TrustedProxies, opts...)
 }
 
 func prefixStrings(ps []netip.Prefix) []string {

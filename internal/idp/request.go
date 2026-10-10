@@ -16,8 +16,10 @@ import (
 )
 
 // MaxRequestBytes bounds both the raw /sso request (POST body or query
-// string) and the decoded AuthnRequest XML. Real AuthnRequests are ~1-2 KB.
-const MaxRequestBytes = 64 << 10
+// string) and the decoded AuthnRequest XML. Real AuthnRequests are ~1-2 KB
+// (a few KB when signed); the raw XML is held in memory for the lifetime of
+// the pending login, so keep this tight.
+const MaxRequestBytes = 16 << 10
 
 // MaxRelayStateBytes is the SAML bindings limit on RelayState.
 const MaxRelayStateBytes = 80
@@ -136,7 +138,7 @@ func (p *IdP) preflight(xmlBuf []byte) (*saml.AuthnRequest, error) {
 			Err: fmt.Errorf("AssertionConsumerServiceURL %q is not configured for service provider %q", u, sp.ID)}
 	}
 	if idx := ar.AssertionConsumerServiceIndex; idx != "" && ar.AssertionConsumerServiceURL == "" {
-		if n, err := strconv.Atoi(idx); err != nil || n < 0 || n >= len(sp.ACSURLs) {
+		if n, err := strconv.Atoi(idx); err != nil || n < 0 || n >= len(orderedACSURLs(sp)) {
 			return nil, &RequestError{Category: CategoryACSNotAllowed, EntityID: sp.EntityID,
 				Err: fmt.Errorf("AssertionConsumerServiceIndex %q is not configured for service provider %q", idx, sp.ID)}
 		}

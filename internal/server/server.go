@@ -41,6 +41,9 @@ type Options struct {
 	// ClientIP resolves the real client IP for logs when behind trusted
 	// proxies. Nil logs only the socket peer.
 	ClientIP *clientip.Resolver
+	// RateLimit throttles starting a login (the redirect to the identity
+	// provider) per client. Nil disables it.
+	RateLimit *RateLimiter
 
 	ReadHeaderTimeout time.Duration
 	ReadTimeout       time.Duration

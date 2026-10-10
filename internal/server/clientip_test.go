@@ -35,7 +35,7 @@ func TestAccessLogClientIP(t *testing.T) {
 		want     string // "" = no client_ip attribute
 	}{
 		{"no trusted proxies configured", nil, "172.18.0.5:1234", ""},
-		{"trusted peer", clientip.New(trusted), "172.18.0.5:1234", "203.0.113.9"},
+		{"trusted peer", clientip.New(trusted, clientip.WithCloudflareHeader()), "172.18.0.5:1234", "203.0.113.9"},
 		{"untrusted peer: spoofed header ignored", clientip.New(trusted), "198.51.100.7:1234", ""},
 	}
 	for _, tc := range tests {

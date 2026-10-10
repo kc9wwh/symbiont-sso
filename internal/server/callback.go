@@ -2,9 +2,11 @@ package server
 
 import (
 	"crypto/subtle"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/kc9wwh/symbiont-sso/internal/oidcrp"
 	"github.com/kc9wwh/symbiont-sso/internal/session"
@@ -17,16 +19,19 @@ const maxStateLen = 128
 
 // Callback failure categories (logged; users see generic text).
 const (
-	catIdPError       = "idp_error"
-	catMissingParams  = "missing_code_or_state"
-	catStateCookie    = "state_cookie_mismatch"
-	catStateUnknown   = "state_unknown_or_expired"
-	catSessionStore   = "session_store_failed"
-	catReplayPending  = "pending_request_invalid"
-	catSPGone         = "service_provider_unknown"
-	catUnknownKind    = "pending_kind_unknown"
-	msgTryAgain       = "Please return to the application and sign in again."
-	titleSignInFailed = "Sign-in failed"
+	catIdPError      = "idp_error"
+	catMissingParams = "missing_code_or_state"
+	catStateCookie   = "state_cookie_mismatch"
+	catStateUnknown  = "state_unknown_or_expired"
+	catSessionStore  = "session_store_failed"
+	catReplayPending = "pending_request_invalid"
+	catSPGone        = "service_provider_unknown"
+	catUnknownKind   = "pending_kind_unknown"
+	// catReauthNotPerformed: the SP demanded fresh authentication and the
+	// provider did not prove it.
+	catReauthNotPerformed = "reauthentication_not_performed"
+	msgTryAgain           = "Please return to the application and sign in again."
+	titleSignInFailed     = "Sign-in failed"
 )
 
 // handleCallback completes the upstream OIDC login. Only global checks
@@ -89,6 +94,13 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if p.ForceLogin && !reauthenticated(ident.AuthTime, p.CreatedAt) {
+		s.callbackFail(w, r, log, catReauthNotPerformed,
+			fmt.Errorf("auth_time %v is missing or older than the login request at %v", ident.AuthTime, p.CreatedAt),
+			http.StatusForbidden)
+		return
+	}
+
 	now := l.now()
 	sess := session.Session{
 		ID: session.NewID(), Subject: ident.Subject, Email: ident.Email, Name: ident.Name,
@@ -101,7 +113,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	token := l.Signer.Sign(session.PurposeSession, sess.ID, sess.ExpiresAt)
 	l.Cookies.Set(w, l.Cookies.SessionName(), token, now, sess.ExpiresAt)
-	log.InfoContext(r.Context(), "upstream login succeeded", "email", sess.Email)
+	log.InfoContext(r.Context(), "upstream login succeeded", "sub", sess.Subject)
 
 	s.resume(w, r, log, p)
 }
@@ -124,4 +136,15 @@ func (s *Server) stateBoundToBrowser(r *http.Request, cookieName, state string) 
 	}
 	v, err := l.Signer.Verify(session.PurposeState, c.Value, l.now())
 	return err == nil && subtle.ConstantTimeCompare([]byte(v), []byte(state)) == 1
+}
+
+// reauthSkew is the clock difference tolerated between the bridge and the
+// identity provider when judging whether a login was fresh.
+const reauthSkew = 60 * time.Second
+
+// reauthenticated reports whether authTime proves the user authenticated
+// after the login request began (allowing for clock skew). A missing
+// auth_time proves nothing.
+func reauthenticated(authTime, requested time.Time) bool {
+	return !authTime.IsZero() && !authTime.Before(requested.Add(-reauthSkew))
 }

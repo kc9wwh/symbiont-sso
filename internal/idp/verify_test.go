@@ -3,6 +3,7 @@ package idp
 import (
 	"encoding/base64"
 	"encoding/xml"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -207,7 +208,7 @@ func TestNameAttributeOmittedWhenEmptyAndEmailRequired(t *testing.T) {
 	if n := len(a.AttributeStatements[0].Attributes); n != 1 {
 		t.Errorf("want only email attribute, got %d", n)
 	}
-	if _, err := p.Respond(req, &Identity{}, nil); err != ErrNoEmail {
+	if _, err := p.Respond(req, &Identity{}, nil); !errors.Is(err, ErrNoEmail) {
 		t.Errorf("empty email: err = %v, want ErrNoEmail", err)
 	}
 }

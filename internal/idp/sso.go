@@ -2,6 +2,7 @@ package idp
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -157,11 +158,11 @@ func (p *IdP) Respond(a *AuthnRequest, id *Identity, attrs []Attribute) (*PostFo
 	a.req.Now = p.now()
 	a.req.Assertion, a.req.AssertionEl, a.req.ResponseEl = nil, nil, nil
 	if err := p.maker.Make(a.req, a.SP, id, attrs); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build assertion: %w", err)
 	}
 	form, err := a.req.PostBinding()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("encode post binding: %w", err)
 	}
 	return &PostForm{Action: form.URL, SAMLResponse: form.SAMLResponse, RelayState: form.RelayState}, nil
 }

@@ -126,11 +126,21 @@ func (c *Client) Warnings() []string {
 }
 
 // AuthCodeURL returns the authorization URL for a new login. The caller
-// must persist verifier and nonce, keyed by state.
-func (c *Client) AuthCodeURL(state, nonce, verifier string) string {
+// must persist verifier and nonce, keyed by state. forceLogin adds
+// prompt=login so the user re-authenticates even with a live provider
+// session (an SP's ForceAuthn), and max_age=0, which also obliges the
+// provider to return auth_time so the caller can verify it happened.
+func (c *Client) AuthCodeURL(state, nonce, verifier string, forceLogin bool) string {
 	opts := []oauth2.AuthCodeOption{oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)}
-	if c.opts.Prompt != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("prompt", c.opts.Prompt))
+	prompt := strings.Fields(c.opts.Prompt)
+	if forceLogin && !slices.Contains(prompt, "login") {
+		prompt = append([]string{"login"}, prompt...)
+	}
+	if len(prompt) > 0 {
+		opts = append(opts, oauth2.SetAuthURLParam("prompt", strings.Join(prompt, " ")))
+	}
+	if forceLogin {
+		opts = append(opts, oauth2.SetAuthURLParam("max_age", "0"))
 	}
 	return c.oauth.AuthCodeURL(state, opts...)
 }

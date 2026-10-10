@@ -4,11 +4,13 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/kc9wwh/symbiont-sso/internal/oidcrp/oidctest"
+	"github.com/kc9wwh/symbiont-sso/internal/session"
 )
 
 // expectFail asserts a generic error page and a logged category.
@@ -149,4 +151,21 @@ func TestE2EUpstreamFailures(t *testing.T) {
 		ssoURL, _ := e.startSSO(e.sp(e2eAdminEntity, e2eAdminACS), "")
 		e.expectFail(e.callback(e.toIdP(ssoURL)), http.StatusBadGateway, "userinfo_sub_mismatch")
 	})
+}
+
+// A full pending store is load, not a fault: 503 and a Warn with its own
+// category, not a "store pending login" Error per rejected request. (The
+// access log still records the 503 at ERROR, like every 5xx.)
+func TestE2EPendingStoreFull(t *testing.T) {
+	e := newE2E(t, e2eOpts{})
+	for i := range session.DefaultPendingMaxEntries {
+		if err := e.pending.Put(t.Context(), strconv.Itoa(i), session.Pending{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ssoURL, _ := e.startSSO(e.sp(e2eAdminEntity, e2eAdminACS), "")
+	e.expectFail(e.do(http.MethodGet, ssoURL, nil), http.StatusServiceUnavailable, catPendingFull)
+	if strings.Contains(e.logs.String(), `"msg":"store pending login"`) {
+		t.Errorf("store-full logged at ERROR:\n%s", e.logs.String())
+	}
 }

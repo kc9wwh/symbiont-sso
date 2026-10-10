@@ -58,6 +58,26 @@ func (s *memStore[V]) put(key string, v V, expires time.Time) (evicted int) {
 	return evicted
 }
 
+// tryPut stores v unless the store is full of live entries, in which case it
+// reports false and leaves the store untouched. Expired entries are purged
+// first, so only unexpired entries count against the cap.
+func (s *memStore[V]) tryPut(key string, v V, expires time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if el, ok := s.items[key]; ok {
+		s.order.Remove(el)
+		delete(s.items, key)
+	}
+	if s.order.Len() >= s.max {
+		s.purgeExpiredLocked()
+		if s.order.Len() >= s.max {
+			return false
+		}
+	}
+	s.items[key] = s.order.PushBack(&memEntry[V]{key: key, val: v, expires: expires})
+	return true
+}
+
 func (s *memStore[V]) lookup(key string, remove bool) (V, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -94,6 +114,10 @@ func (s *memStore[V]) delete(key string) {
 func (s *memStore[V]) sweep() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.purgeExpiredLocked()
+}
+
+func (s *memStore[V]) purgeExpiredLocked() int {
 	now := s.now()
 	n := 0
 	for el := s.order.Front(); el != nil; {

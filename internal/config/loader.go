@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -72,6 +73,19 @@ func (l *loader) boolean(key string, def bool) bool {
 		return def
 	}
 	return b
+}
+
+func (l *loader) nonNegativeInt(key string, def int) int {
+	v, ok := l.get(key)
+	if !ok {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		l.problemf("%s must be a non-negative integer (0 disables), got %q", key, v)
+		return def
+	}
+	return n
 }
 
 func (l *loader) positiveDuration(key string, def time.Duration) time.Duration {
@@ -186,7 +200,8 @@ func readLimited(path string, limit int64) ([]byte, error) {
 // unwrapPathErr keeps messages short: *fs.PathError already carries the
 // path, which callers print themselves.
 func unwrapPathErr(err error) error {
-	if pe, ok := err.(*os.PathError); ok {
+	var pe *os.PathError
+	if errors.As(err, &pe) {
 		return pe.Err
 	}
 	return err
