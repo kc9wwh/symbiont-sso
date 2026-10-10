@@ -1,0 +1,42 @@
+version: 2
+
+# Version updates. Security updates are enabled separately in repo settings
+# and are not delayed by the cooldowns below.
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      # Let new releases age before adopting them (supply-chain hygiene).
+      default-days: 7
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "deps(go)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "deps(actions)"
+
+  # Dockerfile base images (tag@digest pins).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 3
+    commit-message:
+      prefix: "deps(docker)"

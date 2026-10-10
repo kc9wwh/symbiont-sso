@@ -432,14 +432,30 @@ Run against a real Fleet Premium instance and IdP after deploying:
 
 ```sh
 go vet ./... && go test -race ./...
-golangci-lint run          # v2.14.0+ (built with Go 1.27)
+golangci-lint run          # v2.14.0+ (built with Go 1.27); config in .golangci.yml
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 docker build -t symbiont --build-arg VERSION=dev .
 ```
 
-CI (`.github/workflows/ci.yml`) runs tidy/gofmt checks, vet, race tests and
-golangci-lint, builds the multi-arch image on every push and PR, and
-publishes to `ghcr.io/kc9wwh/symbiont` on `v*` tags (`X.Y.Z`, `X.Y`, `X`
-for X ≥ 1, plus a short-SHA tag).
+CI runs on every push and PR. These checks must pass to merge:
+
+| Check | Workflow | What it does |
+|---|---|---|
+| `test` | `ci.yml` | `go mod tidy` check, race tests |
+| `lint` | `ci.yml` | gofmt, vet, golangci-lint (incl. gosec) |
+| `image` | `ci.yml` | Multi-arch image build; on `v*` tags, publishes to `ghcr.io/kc9wwh/symbiont` (`X.Y.Z`, `X.Y`, `X` for X ≥ 1, plus a short-SHA tag) |
+| `govulncheck` | `security.yml` | Known vulnerabilities reachable from this code, incl. the Go standard library. Also runs daily. |
+| `workflow-lint` | `security.yml` | actionlint and zizmor on the workflow files |
+
+CodeQL (GitHub default setup) also gates merges. Dependabot opens weekly
+update PRs for Go modules, GitHub Actions and the Dockerfile base images.
+
+Lint suppressions must name the linter and give a reason
+(`//nolint:gosec // G304: why`); nolintlint enforces this.
+
+All actions are pinned to full commit SHAs, and base images to digests.
+CI runs with `GOTOOLCHAIN` defaults, so the Go version comes from the
+`toolchain` line in `go.mod`; keep it in step with the Dockerfile.
 
 ## License
 

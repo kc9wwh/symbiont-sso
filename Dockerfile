@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 
 # ---- build ------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM golang:1.27.2-bookworm AS build
+# Base images are pinned by digest; Dependabot (docker ecosystem) bumps them.
+FROM --platform=$BUILDPLATFORM golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61 AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -21,7 +22,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ---- runtime ----------------------------------------------------------------
 # distroless/static: no shell, no package manager, CA certificates and tzdata
 # included. :nonroot runs as uid/gid 65532.
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="symbiont" \
