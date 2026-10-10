@@ -138,7 +138,7 @@ func (p *IdP) preflight(xmlBuf []byte) (*saml.AuthnRequest, error) {
 			Err: fmt.Errorf("AssertionConsumerServiceURL %q is not configured for service provider %q", u, sp.ID)}
 	}
 	if idx := ar.AssertionConsumerServiceIndex; idx != "" && ar.AssertionConsumerServiceURL == "" {
-		if n, err := strconv.Atoi(idx); err != nil || n < 0 || n >= len(sp.ACSURLs) {
+		if n, err := strconv.Atoi(idx); err != nil || n < 0 || n >= len(orderedACSURLs(sp)) {
 			return nil, &RequestError{Category: CategoryACSNotAllowed, EntityID: sp.EntityID,
 				Err: fmt.Errorf("AssertionConsumerServiceIndex %q is not configured for service provider %q", idx, sp.ID)}
 		}

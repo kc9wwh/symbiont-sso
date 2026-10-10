@@ -81,8 +81,19 @@ func TestACSIndexHandling(t *testing.T) {
 	if req.ACSURL() != adminACS {
 		t.Errorf("index 0 resolved to %q", req.ACSURL())
 	}
-	bad := postXML(authnXML(adminEntityID, "", ` AssertionConsumerServiceIndex="7"`))
-	_ = requireCategory(t, mustFail(p.ParseRequest(bad)), CategoryACSNotAllowed)
+	// Index 1 is the other ACS in the published (metadata) order, not the
+	// second entry in configuration order, which is adminACS.
+	req, err = p.ParseRequest(postXML(authnXML(adminEntityID, "", ` AssertionConsumerServiceIndex="1"`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.ACSURL() != adminACS2 {
+		t.Errorf("index 1 resolved to %q, want %q", req.ACSURL(), adminACS2)
+	}
+	for _, idx := range []string{"2", "7", "-1", "x"} {
+		bad := postXML(authnXML(adminEntityID, "", ` AssertionConsumerServiceIndex="`+idx+`"`))
+		_ = requireCategory(t, mustFail(p.ParseRequest(bad)), CategoryACSNotAllowed)
+	}
 }
 
 func TestNoACSInRequestUsesDefault(t *testing.T) {
