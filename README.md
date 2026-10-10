@@ -180,6 +180,13 @@ own session. To force users to authenticate at the IdP every time:
 - enable the IdP client's own setting (Pocket ID: **Requires
   reauthentication** on the OIDC client).
 
+If a service provider sends `ForceAuthn="true"`, symbiont ignores its own
+session and asks the IdP to re-authenticate (`prompt=login&max_age=0`). It
+then requires the ID token's `auth_time` to prove that happened, and refuses
+the login (`reauthentication_not_performed` in the logs) if `auth_time` is
+missing or older than the request. The IdP must therefore return `auth_time`
+(Pocket ID does). Fleet does not send `ForceAuthn`.
+
 There is no Single Logout: Fleet does not implement SAML SLO, so logging out
 of Fleet ends neither the symbiont nor the IdP session. Keep `SESSION_TTL`
 short.
@@ -374,7 +381,7 @@ them at the IdP.
 ## Limitations
 
 - Single instance: sessions and pending logins are in memory (bounded to
-  10,000 each). Running replicas requires sticky sessions and still loses
+  10,000 sessions and 5,000 pending logins). Running replicas requires sticky sessions and still loses
   state on restart.
 - No SAML Single Logout, no encrypted assertions, no signed AuthnRequest
   verification (requests are bound to configured SPs and ACS URLs instead).

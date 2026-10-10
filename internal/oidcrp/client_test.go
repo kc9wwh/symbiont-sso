@@ -85,8 +85,12 @@ func TestAuthCodeURLForceLogin(t *testing.T) {
 		if !strings.Contains(u, tc.want) || strings.Contains(u, tc.want+"+login") {
 			t.Errorf("prompt %q: auth URL %s, want %s once", tc.prompt, u, tc.want)
 		}
-		if strings.Contains(c.AuthCodeURL("st", "nn", oidcrp.NewVerifier(), false), "prompt=login") && tc.prompt == "" {
-			t.Error("prompt=login added without forceLogin")
+		if !strings.Contains(u, "max_age=0") {
+			t.Errorf("prompt %q: forced auth URL %s lacks max_age=0", tc.prompt, u)
+		}
+		plain := c.AuthCodeURL("st", "nn", oidcrp.NewVerifier(), false)
+		if strings.Contains(plain, "max_age") || (strings.Contains(plain, "prompt=login") && tc.prompt == "") {
+			t.Errorf("forcing parameters added without forceLogin: %s", plain)
 		}
 	}
 }
