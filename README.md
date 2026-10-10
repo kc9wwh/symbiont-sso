@@ -161,8 +161,12 @@ entry that is not itself a trusted proxy. With
 instead; enable that only when every trusted proxy is Cloudflare, because
 any other proxy lets a client set the header. Requests from any other peer never use these
 headers, since a client could set them to anything. Ranges larger than /8
-(IPv4) or /16 (IPv6) produce a startup warning. `client_ip` is logging
-only; it is never used for decisions.
+(IPv4) or /16 (IPv6) produce a startup warning. Besides logging,
+`client_ip` (or the TCP peer when it is absent) keys the per-client login
+rate limit, with IPv6 clients grouped by /64. A wrong
+`SYMBIONT_TRUSTED_PROXIES` therefore affects throttling too: too narrow and
+every user shares the proxy's budget, too wide and a client can pick its
+own bucket. It is never used for access decisions.
 
 ## Sessions and re-authentication
 
