@@ -3,6 +3,7 @@ package oidcrp
 import (
 	"errors"
 	"fmt"
+	"net/mail"
 	"slices"
 	"strings"
 	"time"
@@ -55,7 +56,7 @@ const (
 func ExtractIdentity(res *Result, names ClaimNames, pol Policy) (*Identity, error) {
 	email, _ := res.Claims[names.Email].(string)
 	email = strings.TrimSpace(email)
-	if email == "" || !strings.Contains(email, "@") {
+	if !validEmail(email) {
 		return nil, &Error{Category: CategoryMissingEmail,
 			Err: fmt.Errorf("claim %q is missing or not an email address", names.Email)}
 	}
@@ -87,6 +88,17 @@ func ExtractIdentity(res *Result, names ClaimNames, pol Policy) (*Identity, erro
 		id.AuthTime = time.Unix(int64(at), 0).UTC()
 	}
 	return id, nil
+}
+
+// validEmail accepts a bare addr-spec with exactly one "@". Anything else
+// (display names, extra "@", whitespace) could smuggle a different domain past
+// the allowlist.
+func validEmail(s string) bool {
+	if strings.Count(s, "@") != 1 {
+		return false
+	}
+	a, err := mail.ParseAddress(s)
+	return err == nil && a.Address == s
 }
 
 // truthy accepts a JSON boolean true or the string "true" (some providers,
