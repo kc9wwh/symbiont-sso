@@ -75,12 +75,8 @@ func runGencert(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "gencert: %v\n", err)
 		return exitError
 	}
-	if err := writeFileAtomic(*outKey, keyPEM, 0o600, *force); err != nil {
-		_, _ = fmt.Fprintf(stderr, "gencert: write key: %v\n", err)
-		return exitError
-	}
-	if err := writeFileAtomic(*outCert, certPEM, 0o644, *force); err != nil {
-		_, _ = fmt.Fprintf(stderr, "gencert: write certificate: %v\n", err)
+	if err := writeKeyPair(*outKey, keyPEM, *outCert, certPEM, *force); err != nil {
+		_, _ = fmt.Fprintf(stderr, "gencert: %v\n", err)
 		return exitError
 	}
 	fp := sha256.Sum256(cert.Raw)
@@ -121,32 +117,6 @@ func generateSigningCert(cn string, validity time.Duration) (certPEM, keyPEM []b
 	}
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
 		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), cert, nil
-}
-
-// writeFileAtomic writes via a temp file + rename so a crash never leaves a
-// truncated key. Without overwrite, it fails if path appeared meanwhile.
-func writeFileAtomic(path string, data []byte, mode os.FileMode, overwrite bool) error {
-	if !overwrite {
-		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
-		if err != nil {
-			return err
-		}
-		if _, err := f.Write(data); err != nil {
-			_ = f.Close()
-			_ = os.Remove(path)
-			return err
-		}
-		return f.Close()
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, mode); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmp, mode); err != nil { // WriteFile honours umask
-		_ = os.Remove(tmp)
-		return err
-	}
-	return os.Rename(tmp, path)
 }
 
 func colonHex(b []byte) string {
