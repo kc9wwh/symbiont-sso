@@ -39,7 +39,7 @@ var (
 	idpCert *x509.Certificate
 )
 
-func testKeyPair(t *testing.T) (*rsa.PrivateKey, *x509.Certificate) {
+func testKeyPair(t testing.TB) (*rsa.PrivateKey, *x509.Certificate) {
 	t.Helper()
 	keyOnce.Do(func() {
 		k, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -84,7 +84,7 @@ func testSPConfigs() []config.ServiceProvider {
 	}
 }
 
-func newTestIdP(t *testing.T) *IdP {
+func newTestIdP(t testing.TB) *IdP {
 	t.Helper()
 	key, cert := testKeyPair(t)
 	sps, err := NewServiceProviders(testSPConfigs())

@@ -453,6 +453,7 @@ Run against a real Fleet Premium instance and IdP after deploying:
 ```sh
 go vet ./... && go test -race ./...
 golangci-lint run          # v2.14.0+ (built with Go 1.27); config in .golangci.yml
+go test ./internal/idp -run '^$' -fuzz '^FuzzParseXML$' -fuzztime 30s   # fuzz one target
 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 docker build -t symbiont --build-arg VERSION=dev .
 ```
@@ -461,7 +462,7 @@ CI runs on every push and PR. These checks must pass to merge:
 
 | Check | Workflow | What it does |
 |---|---|---|
-| `test` | `ci.yml` | `go mod tidy` check, race tests |
+| `test (all Go versions)` | `ci.yml` | Passes only if `test (go1.26)` and `test (go1.27)` both pass: race tests (which include every fuzz target's seed corpus) on the two newest Go releases. The newest also runs the `go mod tidy` check and an 85% statement-coverage minimum (`internal/oidcrp/oidctest`, a test-only helper, is excluded) |
 | `lint` | `ci.yml` | gofmt, vet, golangci-lint (incl. gosec) |
 | `image` | `ci.yml` | Builds the image (amd64 scanned with Grype; fails on HIGH/CRITICAL findings that have a fix; results go to code scanning), and checks the arm64 build |
 | `govulncheck` | `security.yml` | Known vulnerabilities reachable from this code, incl. the Go standard library. Also runs daily. |
@@ -474,14 +475,24 @@ Not merge checks: `publish` (`ci.yml`, `v*` tags only) pushes
 `ghcr.io/kc9wwh/symbiont` (`X.Y.Z`, `X.Y`, `X` for X ≥ 1, plus a short-SHA
 tag) with an SBOM and signed provenance, after every check above has passed;
 `scorecard` (`scorecard.yml`, main and weekly) runs
-[OpenSSF Scorecard](https://scorecard.dev) and reports to the Security tab.
+[OpenSSF Scorecard](https://scorecard.dev) and reports to the Security tab;
+`fuzz` (`fuzz.yml`, nightly) fuzzes the parsers of untrusted input (SAML
+AuthnRequest and RelayState, signed tokens, forwarded-IP headers, the service
+provider YAML, trusted-proxy and domain lists, the OIDC email claim).
 
 Lint suppressions must name the linter and give a reason
 (`//nolint:gosec // G304: why`); nolintlint enforces this.
 
 All actions are pinned to full commit SHAs, and base images to digests.
-CI runs with `GOTOOLCHAIN` defaults, so the Go version comes from the
-`toolchain` line in `go.mod`; keep it in step with the Dockerfile.
+The `test` matrix runs the two newest Go releases with `GOTOOLCHAIN=local`,
+so each leg really uses its own Go version. Everything else (lint, image,
+release) uses the `toolchain` line in `go.mod`; keep it in step with the
+Dockerfile. When a new Go release ships, update the matrix and `NEWEST_GO` in
+`ci.yml`.
+
+If a nightly fuzz run fails, it uploads the failing input as an artifact.
+Download it into `internal/<package>/testdata/fuzz/<FuzzTarget>/` and commit
+it: from then on every `go test` run replays it as a regression test.
 
 ## License
 

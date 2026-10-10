@@ -20,8 +20,23 @@ env:
   IMAGE: ghcr.io/kc9wwh/symbiont
 
 jobs:
+  # The module supports the two newest Go releases (go.mod's `go` line is the
+  # oldest). The image is built with the newest, so only that leg runs the
+  # tidy check and the coverage gate. When a new Go release ships, add it to
+  # the matrix, drop the oldest, and update NEWEST_GO and go.mod. The ruleset
+  # requires only `test (all Go versions)` below, so it needs no change.
   test:
+    name: test (go${{ matrix.go }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.26", "1.27"]
+    env:
+      # Use the toolchain setup-go installed, never download another one
+      # (go.mod's toolchain line would otherwise upgrade the 1.26 leg).
+      GOTOOLCHAIN: local
+      NEWEST_GO: "1.27"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,19 +44,66 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # Uses the go.mod toolchain directive (the Dockerfile's Go version).
-          go-version-file: go.mod
+          go-version: ${{ matrix.go }}
           # No module/build cache: this workflow also publishes on v* tags,
           # and a cache written by a PR run must not feed a release build.
           cache: false
 
+      - name: Go version
+        run: go version
+
       - name: go mod tidy check
+        if: ${{ matrix.go == env.NEWEST_GO }}
         run: |
           go mod tidy
           git diff --exit-code -- go.mod go.sum
 
+      # Also runs every fuzz target's seed corpus (and any regression inputs
+      # under testdata/fuzz) as ordinary tests.
       - name: go test -race
+        if: ${{ matrix.go != env.NEWEST_GO }}
         run: go test -race -count=1 ./...
+
+      - name: go test -race with coverage
+        if: ${{ matrix.go == env.NEWEST_GO }}
+        run: go test -race -covermode=atomic -coverprofile=coverage.out -count=1 ./...
+
+      # oidctest is a test-only helper (never built into the binary) and has
+      # no tests of its own, so it is left out of the total.
+      - name: Coverage gate (85%)
+        if: ${{ matrix.go == env.NEWEST_GO }}
+        env:
+          MIN_COVERAGE: "85.0"
+        run: |
+          grep -v '/internal/oidcrp/oidctest/' coverage.out > coverage.filtered.out
+          total="$(go tool cover -func=coverage.filtered.out | awk '/^total:/ {sub("%","",$3); print $3}')"
+          echo "Total statement coverage: ${total}% (minimum ${MIN_COVERAGE}%)"
+          {
+            echo "### Coverage"
+            echo "${total}% of statements (minimum ${MIN_COVERAGE}%, \`internal/oidcrp/oidctest\` excluded)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          awk -v t="$total" -v m="$MIN_COVERAGE" 'BEGIN { exit !(t+0 >= m+0) }' || {
+            echo "::error::coverage ${total}% is below the ${MIN_COVERAGE}% minimum"
+            exit 1
+          }
+
+  # Single stable check for the ruleset: it passes only when every Go
+  # version passed, so the matrix can change without touching branch
+  # protection. `if: always()` makes a failed or cancelled matrix report a
+  # failure here instead of leaving this check "skipped", which GitHub
+  # would count as passing.
+  test-all:
+    name: test (all Go versions)
+    if: ${{ always() }}
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every Go version to pass
+        env:
+          RESULT: ${{ needs.test.result }}
+        run: |
+          echo "test matrix result: ${RESULT}"
+          [ "${RESULT}" = "success" ]
 
   lint:
     runs-on: ubuntu-latest
