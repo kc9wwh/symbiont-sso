@@ -122,7 +122,7 @@ func printDecision(w io.Writer, sp *config.ServiceProvider, ident *oidcrp.Identi
 }
 
 func readClaims(path string) (map[string]any, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: operator-supplied CLI path is the intended input
 	if err != nil {
 		return nil, err
 	}

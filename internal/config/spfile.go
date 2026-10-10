@@ -111,7 +111,7 @@ func decodeSPFile(data []byte) (*spFile, error) {
 		if errors.Is(err, io.EOF) {
 			return nil, errors.New("file is empty; define at least one entry under service_providers")
 		}
-		return nil, fmt.Errorf("invalid YAML: %v", err)
+		return nil, fmt.Errorf("invalid YAML: %w", err)
 	}
 	var extra yaml.Node
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {

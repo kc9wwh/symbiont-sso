@@ -46,7 +46,9 @@ func (c Cookies) Set(w http.ResponseWriter, name, value string, now, expires tim
 	if maxAge < 1 {
 		maxAge = 1
 	}
-	http.SetCookie(w, &http.Cookie{
+	// Secure is false only for an http://localhost base URL (config rejects
+	// plain http elsewhere); HttpOnly and SameSite are always set.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure follows the base URL scheme, see above
 		Name:     name,
 		Value:    value,
 		Path:     "/",
@@ -60,7 +62,7 @@ func (c Cookies) Set(w http.ResponseWriter, name, value string, now, expires tim
 
 // Clear deletes a cookie.
 func (c Cookies) Clear(w http.ResponseWriter, name string) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: same attributes as Set
 		Name:     name,
 		Value:    "",
 		Path:     "/",

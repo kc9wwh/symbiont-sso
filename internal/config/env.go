@@ -12,7 +12,7 @@ const (
 	EnvRateLimitPerMinute  = "SYMBIONT_RATE_LIMIT_PER_MINUTE"
 	EnvOIDCIssuer          = "OIDC_ISSUER"
 	EnvOIDCClientID        = "OIDC_CLIENT_ID"
-	EnvOIDCClientSecret    = "OIDC_CLIENT_SECRET"
+	EnvOIDCClientSecret    = "OIDC_CLIENT_SECRET" //nolint:gosec // G101: env var name, not a credential
 	EnvOIDCScopes          = "OIDC_SCOPES"
 	EnvOIDCEmailClaim      = "OIDC_EMAIL_CLAIM"
 	EnvOIDCNameClaim       = "OIDC_NAME_CLAIM"

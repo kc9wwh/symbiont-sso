@@ -80,7 +80,7 @@ func TestE2EForceAuthnRequiresFreshAuthTime(t *testing.T) {
 		user func(now time.Time) *oidctest.User
 		ok   bool
 	}{
-		{"fresh auth_time", func(now time.Time) *oidctest.User { return adminWithAuthTime(now) }, true},
+		{"fresh auth_time", adminWithAuthTime, true},
 		{"auth_time within skew", func(now time.Time) *oidctest.User { return adminWithAuthTime(now.Add(-30 * time.Second)) }, true},
 		{"stale auth_time", func(now time.Time) *oidctest.User { return adminWithAuthTime(now.Add(-time.Hour)) }, false},
 		{"missing auth_time", func(time.Time) *oidctest.User { return adminUser }, false},

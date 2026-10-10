@@ -126,7 +126,9 @@ func HasFleetRoleAttributes(attrs []Attribute, passthroughPrefixes []string) boo
 		}
 	}
 	for _, p := range passthroughPrefixes {
-		if strings.HasPrefix("FLEET_JIT_USER_ROLE_", p) || strings.HasPrefix(p, "FLEET_JIT_USER_ROLE_") {
+		// Either direction overlaps: prefix "FLEET_" can produce role
+		// attributes, and so can "FLEET_JIT_USER_ROLE_GLOBAL".
+		if strings.HasPrefix("FLEET_JIT_USER_ROLE_", p) || strings.HasPrefix(p, "FLEET_JIT_USER_ROLE_") { //nolint:gocritic // argOrder: reversed order is intentional, see above
 			return true
 		}
 	}

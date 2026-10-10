@@ -163,7 +163,7 @@ func (l *loader) readableFile(key string) string {
 		l.problemf("%s is required", key)
 		return ""
 	}
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: path comes from operator config (*_FILE env vars)
 	if err != nil {
 		l.problemf("%s: cannot open %q: %v", key, path, unwrapPathErr(err))
 		return path
@@ -182,7 +182,7 @@ func (l *loader) readableFile(key string) string {
 
 // readLimited reads at most limit bytes from path, failing if it is larger.
 func readLimited(path string, limit int64) ([]byte, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: path comes from operator config (*_FILE env vars)
 	if err != nil {
 		return nil, unwrapPathErr(err)
 	}
