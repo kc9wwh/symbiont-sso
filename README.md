@@ -132,6 +132,26 @@ against `GET /healthz` (returns `200 {"status":"ok"}`, makes no upstream
 calls), e.g. a Kubernetes `livenessProbe.httpGet` on port 8080, or your
 reverse proxy's / uptime monitor's health check.
 
+### Verifying the image
+
+Release images (from the first release built after supply-chain attestations
+were added) carry a GitHub-signed SLSA build provenance attestation and a
+BuildKit SBOM. Check that an image was built by this repository's release
+workflow before you run it:
+
+```sh
+gh attestation verify oci://ghcr.io/kc9wwh/symbiont:<version> --repo kc9wwh/symbiont-sso
+```
+
+Inspect the SBOM and provenance attached to the image:
+
+```sh
+docker buildx imagetools inspect ghcr.io/kc9wwh/symbiont:<version> --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/kc9wwh/symbiont:<version> --format '{{ json .Provenance }}'
+```
+
+Earlier releases (v0.1.2 and before) have no attestation.
+
 ### Cloudflare Tunnel
 
 - Route the public hostname to the container over **plain HTTP**
@@ -443,12 +463,18 @@ CI runs on every push and PR. These checks must pass to merge:
 |---|---|---|
 | `test` | `ci.yml` | `go mod tidy` check, race tests |
 | `lint` | `ci.yml` | gofmt, vet, golangci-lint (incl. gosec) |
-| `image` | `ci.yml` | Multi-arch image build; on `v*` tags, publishes to `ghcr.io/kc9wwh/symbiont` (`X.Y.Z`, `X.Y`, `X` for X ≥ 1, plus a short-SHA tag) |
+| `image` | `ci.yml` | Builds the image (amd64 scanned with Grype; fails on HIGH/CRITICAL findings that have a fix; results go to code scanning), and checks the arm64 build |
 | `govulncheck` | `security.yml` | Known vulnerabilities reachable from this code, incl. the Go standard library. Also runs daily. |
 | `workflow-lint` | `security.yml` | actionlint and zizmor on the workflow files |
 
 CodeQL (GitHub default setup) also gates merges. Dependabot opens weekly
 update PRs for Go modules, GitHub Actions and the Dockerfile base images.
+
+Not merge checks: `publish` (`ci.yml`, `v*` tags only) pushes
+`ghcr.io/kc9wwh/symbiont` (`X.Y.Z`, `X.Y`, `X` for X ≥ 1, plus a short-SHA
+tag) with an SBOM and signed provenance, after every check above has passed;
+`scorecard` (`scorecard.yml`, main and weekly) runs
+[OpenSSF Scorecard](https://scorecard.dev) and reports to the Security tab.
 
 Lint suppressions must name the linter and give a reason
 (`//nolint:gosec // G304: why`); nolintlint enforces this.

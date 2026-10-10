@@ -60,8 +60,11 @@ jobs:
         run: go run "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
 
       # Results go to the Security tab (code scanning). The action exits 0 in
-      # SARIF mode, so the step below fails the job on any finding.
+      # SARIF mode, so the step below fails the job on any finding. Skipped
+      # on fork and Dependabot PRs: their tokens are read-only, so the upload
+      # would fail the job (the gate below still runs).
       - name: zizmor (SARIF upload)
+        if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') }}
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
         with:
           version: ${{ env.ZIZMOR_VERSION }}
