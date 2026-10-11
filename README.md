@@ -360,6 +360,9 @@ mapping as SP-initiated login. Unknown or disabled SPs return 404.
 
 ## Security notes
 
+To report a vulnerability, see [SECURITY.md](SECURITY.md) (private
+reporting; please don't open a public issue).
+
 ### Assertion validity and replay
 
 Assertions are valid for **90 seconds** after issue (`NotOnOrAfter`), and
@@ -451,12 +454,27 @@ Run against a real Fleet Premium instance and IdP after deploying:
 ## Development
 
 ```sh
-go vet ./... && go test -race ./...
-golangci-lint run          # v2.14.0+ (built with Go 1.27); config in .golangci.yml
-go test ./internal/idp -run '^$' -fuzz '^FuzzParseXML$' -fuzztime 30s   # fuzz one target
-go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+make check                 # everything CI gates on, except the image build
+make help                  # list all targets
+make fuzz-smoke            # every fuzz target for 5s each (FUZZTIME=30s to change)
+make hooks                 # enable the git hooks (see below)
 docker build -t symbiont --build-arg VERSION=dev .
 ```
+
+`make check` runs gofmt, `go vet`, golangci-lint, the race tests,
+govulncheck and actionlint (plus zizmor if `uvx` is installed). It needs
+golangci-lint v2.14.0+ built with Go 1.27 (config in `.golangci.yml`); the
+govulncheck, actionlint and zizmor versions are read from `security.yml`, so
+local runs match CI. To fuzz a single target for longer:
+
+```sh
+go test ./internal/idp -run '^$' -fuzz '^FuzzParseXML$' -fuzztime 30s
+```
+
+`make hooks` points git at `.githooks/`: `pre-commit` runs gofmt on the
+staged Go files and `go vet` (seconds); `pre-push` runs `make lint test`.
+They are a convenience, not a gate: CI runs the same checks and is what
+blocks a merge. Skip one with `--no-verify`.
 
 CI runs on every push and PR. These checks must pass to merge:
 

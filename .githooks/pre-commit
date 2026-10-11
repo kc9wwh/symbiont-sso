@@ -1,0 +1,19 @@
+#!/bin/sh
+# Fast checks only (a few seconds). The slower ones run in pre-push.
+# Enable with `make hooks`. Skip once with `git commit --no-verify`.
+set -eu
+
+staged="$(git diff --cached --name-only --diff-filter=ACM -- '*.go')"
+[ -n "$staged" ] || exit 0
+
+# gofmt reads the working-tree copy, so a partially staged file is checked
+# as a whole. That is stricter, not looser.
+# shellcheck disable=SC2086 # file names in this repo contain no whitespace
+unformatted="$(gofmt -l $staged)"
+if [ -n "$unformatted" ]; then
+	echo "pre-commit: not gofmt'ed (run 'make fmt'):" >&2
+	echo "$unformatted" >&2
+	exit 1
+fi
+
+go vet ./...

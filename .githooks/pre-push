@@ -1,0 +1,7 @@
+#!/bin/sh
+# The checks a PR would fail on, run before the push instead of after.
+# govulncheck is left out: it needs the network and CI runs it daily.
+# Enable with `make hooks`. Skip once with `git push --no-verify`.
+set -eu
+
+make lint test
