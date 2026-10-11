@@ -1,0 +1,66 @@
+name: dependabot-automerge
+
+# Turns on auto-merge for Dependabot PRs that are patch or minor updates of
+# Go modules or GitHub Actions. Auto-merge only completes once every required
+# check in the repository ruleset has passed, so CI stays the gate; this
+# workflow never merges anything itself.
+#
+# Deliberately not covered: major updates and Docker base images (they wait
+# for a manual merge), and any PR a person has pushed to (the job fails).
+#
+# Uses plain `pull_request` (not pull_request_target) and never checks out
+# the PR, so no PR-controlled code runs with the write token.
+
+on: pull_request
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  automerge:
+    name: enable auto-merge
+    runs-on: ubuntu-latest
+    # user.login is who opened the PR. (github.actor is only the last actor
+    # and can be spoofed, so it is not used; zizmor's bot-conditions audit.)
+    # fetch-metadata then fails the job unless the PR's head commit is
+    # authored by Dependabot with a verified signature, so a PR that a person
+    # has pushed to is never auto-merged.
+    if: >-
+      github.repository == 'kc9wwh/symbiont-sso' &&
+      github.event.pull_request.user.login == 'dependabot[bot]'
+    permissions:
+      contents: write # gh pr merge --auto
+      pull-requests: write # same command: auto-merge is a pull request mutation
+    steps:
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      # update-type is the highest semver change in the PR, so a group that
+      # contains one major bump counts as major and is skipped. Any
+      # unrecognised ecosystem or update type also fails closed.
+      - name: Enable auto-merge (squash)
+        if: >-
+          contains(fromJSON('["go_modules","github_actions"]'), steps.metadata.outputs.package-ecosystem) &&
+          contains(fromJSON('["version-update:semver-patch","version-update:semver-minor"]'), steps.metadata.outputs.update-type)
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Leave for manual review
+        if: >-
+          !(contains(fromJSON('["go_modules","github_actions"]'), steps.metadata.outputs.package-ecosystem) &&
+          contains(fromJSON('["version-update:semver-patch","version-update:semver-minor"]'), steps.metadata.outputs.update-type))
+        run: |
+          {
+            echo "Not auto-merging: needs a manual merge."
+            echo "- ecosystem: \`${ECOSYSTEM}\`"
+            echo "- update type: \`${UPDATE_TYPE}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
