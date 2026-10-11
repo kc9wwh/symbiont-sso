@@ -488,6 +488,12 @@ CI runs on every push and PR. These checks must pass to merge:
 
 CodeQL (GitHub default setup) also gates merges. Dependabot opens weekly
 update PRs for Go modules, GitHub Actions and the Dockerfile base images.
+`dependabot-automerge.yml` turns on auto-merge for its **patch and minor**
+updates of Go modules and GitHub Actions; the PR still merges only after every
+required check above passes. Major updates and Docker base images are merged
+by hand. The branch rule requires an up-to-date branch, so if several
+Dependabot PRs are open, comment `@dependabot rebase` on the others after one
+merges.
 
 Not merge checks: `publish` (`ci.yml`, `v*` tags only) pushes
 `ghcr.io/kc9wwh/symbiont` (`X.Y.Z`, `X.Y`, `X` for X ≥ 1, plus a short-SHA
