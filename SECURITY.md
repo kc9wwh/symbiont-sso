@@ -34,6 +34,14 @@ as offboarding and the replay window for IdP-initiated logins.
 Out of scope: weaknesses in the OIDC provider or the service provider
 themselves, and misconfiguration that the README warns against.
 
+## Suppressed advisories
+
+Dependency advisories that do not affect symbiont are listed in
+[`osv-scanner.toml`](osv-scanner.toml), which OSV-Scanner and the OpenSSF
+Scorecard read. Each entry must state why the advisory does not apply. If
+that reason depends on a package never being imported, CI must enforce it
+(for example `make no-openpgp`).
+
 ## Verifying what you run
 
 Release images carry an SBOM and signed build provenance. See *Verifying the

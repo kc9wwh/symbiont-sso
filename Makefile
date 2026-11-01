@@ -18,7 +18,7 @@ ZIZMOR_VERSION      ?= $(shell sed -n 's/^  ZIZMOR_VERSION: //p' $(WORKFLOW_ENV)
 FUZZTIME            ?= 5s
 
 .DEFAULT_GOAL := help
-.PHONY: help fmt fmt-check vet lint test vuln workflow-lint fuzz-smoke check hooks
+.PHONY: help fmt fmt-check vet lint test vuln no-openpgp workflow-lint fuzz-smoke check hooks
 
 help: ## List targets
 	@awk 'BEGIN { FS = ":.*## " } /^[a-z-]+:.*## / { printf "  %-14s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -40,8 +40,17 @@ lint: ## golangci-lint (config: .golangci.yml)
 test: ## Race tests (includes every fuzz target's seed corpus)
 	go test -race -count=1 ./...
 
-vuln: ## govulncheck (needs network)
+vuln: no-openpgp ## govulncheck (needs network)
 	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
+# Backs the GO-2026-5932 suppression in osv-scanner.toml: that advisory only
+# matters if golang.org/x/crypto/openpgp is linked in. Output is captured
+# before grepping so a failing `go list` cannot pass silently.
+no-openpgp: ## Fail if golang.org/x/crypto/openpgp is in the build or test graph
+	@deps="$$(go list -test -deps ./...)"; \
+	if grep '^golang.org/x/crypto/openpgp' <<<"$$deps"; then \
+		echo "golang.org/x/crypto/openpgp is imported (GO-2026-5932); remove it or use github.com/ProtonMail/go-crypto/openpgp"; exit 1; \
+	fi
 
 workflow-lint: ## actionlint, plus zizmor when uvx is installed
 	go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION)

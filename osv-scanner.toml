@@ -1,0 +1,13 @@
+# OSV-Scanner suppressions (also honoured by the OpenSSF Scorecard
+# Vulnerabilities check). Every entry needs a reason; see SECURITY.md.
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+# No ignoreUntil: the advisory has no fixed version, and `make no-openpgp`
+# (run in CI by security.yml) fails if the affected package is ever imported.
+reason = """\
+Affects only golang.org/x/crypto/openpgp/... and lists no fixed version, so \
+every x/crypto release is flagged. symbiont never imports openpgp: x/crypto \
+is required only for ripemd160 (crewjam/saml/xmlenc) and, in tests, pbkdf2 \
+(go-jose/v3 via mockoidc). govulncheck reports no reachable code.\
+"""
