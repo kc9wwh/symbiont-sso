@@ -11,3 +11,38 @@ every x/crypto release is flagged. symbiont never imports openpgp: x/crypto \
 is required only for ripemd160 (crewjam/saml/xmlenc) and, in tests, pbkdf2 \
 (go-jose/v3 via mockoidc). govulncheck reports no reachable code.\
 """
+
+# github.com/go-jose/go-jose/v4 is upgraded to >= v4.1.7 (fixing all three
+# advisories below), and govulncheck + Grype continue to gate the built binary.
+# OpenSSF Scorecard still flags go.mod because github.com/go-jose/go-jose/v3
+# (<= v3.0.5, end-of-life with no fixed v3 release) is pulled in indirectly by
+# github.com/oauth2-proxy/mockoidc via the test-only internal/oidcrp/oidctest
+# helper. `make no-go-jose-v3` (run in CI by security.yml) fails if go-jose/v3
+# is ever imported outside oidctest.
+
+[[IgnoredVulns]]
+id = "GHSA-mgcc-cww5-fp2q"
+reason = """\
+Fixed in github.com/go-jose/go-jose/v4 v4.1.6 (symbiont requires v4.1.7+). \
+github.com/go-jose/go-jose/v3 has no fixed version and is pulled in only by \
+mockoidc for tests (enforced by `make no-go-jose-v3`); it is never linked into \
+the symbiont binary.\
+"""
+
+[[IgnoredVulns]]
+id = "GHSA-vvm8-gf78-28g4"
+reason = """\
+Fixed in github.com/go-jose/go-jose/v4 v4.1.5 (symbiont requires v4.1.7+). \
+github.com/go-jose/go-jose/v3 has no fixed version and is pulled in only by \
+mockoidc for tests (enforced by `make no-go-jose-v3`); it is never linked into \
+the symbiont binary.\
+"""
+
+[[IgnoredVulns]]
+id = "GHSA-4w3g-jfj2-cw2q"
+reason = """\
+Fixed in github.com/go-jose/go-jose/v4 v4.1.5 (symbiont requires v4.1.7+). \
+github.com/go-jose/go-jose/v3 has no fixed version and is pulled in only by \
+mockoidc for tests (enforced by `make no-go-jose-v3`); it is never linked into \
+the symbiont binary.\
+"""
