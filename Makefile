@@ -18,10 +18,10 @@ ZIZMOR_VERSION      ?= $(shell sed -n 's/^  ZIZMOR_VERSION: //p' $(WORKFLOW_ENV)
 FUZZTIME            ?= 5s
 
 .DEFAULT_GOAL := help
-.PHONY: help fmt fmt-check vet lint test vuln no-openpgp workflow-lint fuzz-smoke check hooks
+.PHONY: help fmt fmt-check vet lint test vuln no-openpgp no-go-jose-v3 workflow-lint fuzz-smoke check hooks
 
 help: ## List targets
-	@awk 'BEGIN { FS = ":.*## " } /^[a-z-]+:.*## / { printf "  %-14s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@awk 'BEGIN { FS = ":.*## " } /^[a-z0-9-]+:.*## / { printf "  %-14s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 fmt: ## Format all Go files in place
 	gofmt -w .
@@ -40,7 +40,7 @@ lint: ## golangci-lint (config: .golangci.yml)
 test: ## Race tests (includes every fuzz target's seed corpus)
 	go test -race -count=1 ./...
 
-vuln: no-openpgp ## govulncheck (needs network)
+vuln: no-openpgp no-go-jose-v3 ## govulncheck (needs network)
 	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 # Backs the GO-2026-5932 suppression in osv-scanner.toml: that advisory only
@@ -50,6 +50,17 @@ no-openpgp: ## Fail if golang.org/x/crypto/openpgp is in the build or test graph
 	@deps="$$(go list -test -deps ./...)"; \
 	if grep '^golang.org/x/crypto/openpgp' <<<"$$deps"; then \
 		echo "golang.org/x/crypto/openpgp is imported (GO-2026-5932); remove it or use github.com/ProtonMail/go-crypto/openpgp"; exit 1; \
+	fi
+
+# Backs the go-jose/v3 suppressions in osv-scanner.toml (GHSA-mgcc-cww5-fp2q,
+# GHSA-vvm8-gf78-28g4, GHSA-4w3g-jfj2-cw2q): go-jose/v3 has no fixed version
+# and is pulled in only by mockoidc via the test-only internal/oidcrp/oidctest
+# helper. Production code must use github.com/go-jose/go-jose/v4.
+no-go-jose-v3: ## Fail if github.com/go-jose/go-jose/v3 is imported outside oidctest
+	@pkgs="$$(go list ./... | grep -v '/internal/oidcrp/oidctest$$')"; \
+	deps="$$(go list -deps $$pkgs)"; \
+	if grep '^github.com/go-jose/go-jose/v3' <<<"$$deps"; then \
+		echo "github.com/go-jose/go-jose/v3 is imported outside internal/oidcrp/oidctest; use github.com/go-jose/go-jose/v4"; exit 1; \
 	fi
 
 workflow-lint: ## actionlint, plus zizmor when uvx is installed

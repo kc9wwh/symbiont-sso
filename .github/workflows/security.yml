@@ -37,10 +37,11 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      # GO-2026-5932 is suppressed in osv-scanner.toml because openpgp is
-      # never imported; this keeps that true.
-      - name: no x/crypto/openpgp
-        run: make no-openpgp
+      # GO-2026-5932 and the go-jose/v3 advisories are suppressed in
+      # osv-scanner.toml because openpgp is never imported and go-jose/v3 is
+      # test-only (via mockoidc in oidctest); these targets keep that true.
+      - name: no x/crypto/openpgp or prod go-jose/v3
+        run: make no-openpgp no-go-jose-v3
 
       # Fails on any vulnerability reachable from this module's code.
       - name: govulncheck
