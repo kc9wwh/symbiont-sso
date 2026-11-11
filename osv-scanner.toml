@@ -46,3 +46,16 @@ github.com/go-jose/go-jose/v3 has no fixed version and is pulled in only by \
 mockoidc for tests (enforced by `make no-go-jose-v3`); it is never linked into \
 the symbiont binary.\
 """
+
+[[IgnoredVulns]]
+id = "GO-2026-6909"
+# No ignoreUntil: the advisory lists no fixed version, and govulncheck (run in
+# CI by security.yml) fails if any of the affected symbols are ever called.
+reason = """\
+Affects only github.com/crewjam/saml ServiceProvider assertion-consuming \
+methods (ParseResponse, ParseXMLResponse, ParseXMLArtifactResponse, \
+validateAssertion) and lists no fixed version. symbiont is a SAML identity \
+provider (it issues assertions and never consumes them); saml.ServiceProvider \
+is used only in _test.go files as an SP test harness, and govulncheck reports \
+no reachable code.\
+"""
